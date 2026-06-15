@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  AlertCircle,
+  CalendarCheck,
   CalendarDays,
   Check,
   ChevronRight,
@@ -11,6 +13,7 @@ import {
   Hospital,
   Mail,
   MapPin,
+  MessageSquareText,
   Mic,
   Navigation,
   Phone,
@@ -139,9 +142,14 @@ function App() {
       facilityId: facilities[0].id,
       date: "2026-06-16",
       time: "10:30",
-      purpose: "Cardiology referral discussion"
+      purpose: "Cardiology referral discussion",
+      status: "confirmed",
+      approvalStatus: "doctor_approved",
+      calendarStatus: "calendar_event_created",
+      source: "demo"
     }
   ]);
+  const [outreachRequests, setOutreachRequests] = useState([]);
 
   const selectedFacility = facilities.find((facility) => facility.id === selectedFacilityId) || facilities[0];
 
@@ -167,13 +175,123 @@ function App() {
     );
   }
 
-  function addSchedule(entry) {
-    setSchedule((current) => [{ id: crypto.randomUUID(), ...entry }, ...current]);
+  function addSchedule(entry, options = {}) {
+    const nextEntry = {
+      id: crypto.randomUUID(),
+      status: options.status || "pending_approval",
+      approvalStatus: options.approvalStatus || "doctor_approval_required",
+      calendarStatus: options.calendarStatus || "pending_hold",
+      source: options.source || "manual",
+      ...entry
+    };
+    setSchedule((current) => [nextEntry, ...current]);
     setActiveView("schedule");
+  }
+
+  function approveSchedule(id) {
+    setSchedule((current) =>
+      current.map((entry) =>
+        entry.id === id
+          ? {
+              ...entry,
+              status: "confirmed",
+              approvalStatus: "doctor_approved",
+              calendarStatus: "calendar_event_created",
+              approvedAt: new Date().toISOString()
+            }
+          : entry
+      )
+    );
   }
 
   function removeSchedule(id) {
     setSchedule((current) => current.filter((entry) => entry.id !== id));
+  }
+
+  function createOutreachDraft(facilityId) {
+    const facility = facilities.find((item) => item.id === facilityId);
+    if (!facility) return;
+
+    const existing = outreachRequests.find(
+      (request) => request.facilityId === facilityId && request.status !== "closed"
+    );
+    if (existing) {
+      setActiveView("outreach");
+      return;
+    }
+
+    setOutreachRequests((current) => [
+      {
+        id: crypto.randomUUID(),
+        facilityId,
+        channel: facility.email ? "Email" : "Phone script",
+        destination: facility.email || facility.phone,
+        status: "draft",
+        approvalStatus: "doctor_approval_required",
+        message: buildOutreachMessage(facility, profile),
+        proposedTimes: [
+          { date: "2026-06-18", time: "11:00", label: "Thu, Jun 18 at 11:00" },
+          { date: "2026-06-19", time: "14:30", label: "Fri, Jun 19 at 14:30" }
+        ],
+        createdAt: new Date().toISOString()
+      },
+      ...current
+    ]);
+    setActiveView("outreach");
+  }
+
+  function approveOutreach(id) {
+    setOutreachRequests((current) =>
+      current.map((request) =>
+        request.id === id
+          ? {
+              ...request,
+              status: "reply_received",
+              approvalStatus: "outreach_approved",
+              sentAt: new Date().toISOString(),
+              replySummary:
+                "Clinic replied with interest and asked the doctor to choose one of the proposed introductory meeting slots.",
+              schedulingApprovalStatus: "doctor_approval_required"
+            }
+          : request
+      )
+    );
+  }
+
+  function approveClinicTime(requestId, proposedTime) {
+    const request = outreachRequests.find((item) => item.id === requestId);
+    if (!request) return;
+    const facility = facilities.find((item) => item.id === request.facilityId);
+    if (!facility) return;
+
+    addSchedule(
+      {
+        facilityId: request.facilityId,
+        date: proposedTime.date,
+        time: proposedTime.time,
+        purpose: `${request.channel} follow-up with ${facility.name}`
+      },
+      {
+        status: "confirmed",
+        approvalStatus: "doctor_approved",
+        calendarStatus: "calendar_event_created",
+        source: "clinic_reply"
+      }
+    );
+
+    setOutreachRequests((current) =>
+      current.map((item) =>
+        item.id === requestId
+          ? {
+              ...item,
+              status: "appointment_confirmed",
+              schedulingApprovalStatus: "doctor_approved",
+              approvedTime: proposedTime,
+              confirmedAt: new Date().toISOString()
+            }
+          : item
+      )
+    );
   }
 
   if (!profile) {
@@ -186,6 +304,7 @@ function App() {
         activeView={activeView}
         setActiveView={setActiveView}
         shortlistCount={shortlist.length}
+        approvalCount={getApprovalCount(outreachRequests, schedule)}
         profile={profile}
         onResetProfile={resetProfile}
       />
@@ -200,7 +319,12 @@ function App() {
           toggleShortlist={toggleShortlist}
           schedule={schedule}
           addSchedule={addSchedule}
+          approveSchedule={approveSchedule}
           removeSchedule={removeSchedule}
+          outreachRequests={outreachRequests}
+          createOutreachDraft={createOutreachDraft}
+          approveOutreach={approveOutreach}
+          approveClinicTime={approveClinicTime}
           profile={profile}
         />
         <MapWorkspace
@@ -212,6 +336,7 @@ function App() {
           toggleShortlist={toggleShortlist}
           schedule={schedule}
           addSchedule={addSchedule}
+          createOutreachDraft={createOutreachDraft}
         />
       </main>
     </div>
@@ -388,9 +513,10 @@ function StatusPill({ status }) {
   return <span className={`statusPill status-${status}`}>{copy}</span>;
 }
 
-function TopBar({ activeView, setActiveView, shortlistCount, profile, onResetProfile }) {
+function TopBar({ activeView, setActiveView, shortlistCount, approvalCount, profile, onResetProfile }) {
   const tabs = [
     { id: "search", label: "Search", icon: Search },
+    { id: "outreach", label: `Outreach (${approvalCount})`, icon: MessageSquareText },
     { id: "schedule", label: "Schedule", icon: CalendarDays },
     { id: "shortlist", label: `Shortlist (${shortlistCount})`, icon: Star }
   ];
@@ -433,6 +559,9 @@ function TopBar({ activeView, setActiveView, shortlistCount, profile, onResetPro
 }
 
 function LeftPanel(props) {
+  if (props.activeView === "outreach") {
+    return <OutreachPanel {...props} />;
+  }
   if (props.activeView === "schedule") {
     return <SchedulePanel {...props} />;
   }
@@ -581,7 +710,8 @@ function MapWorkspace({
   shortlist,
   toggleShortlist,
   schedule,
-  addSchedule
+  addSchedule,
+  createOutreachDraft
 }) {
   const visibleFacilities = useMemo(() => {
     if (activeView === "shortlist") {
@@ -629,6 +759,7 @@ function MapWorkspace({
               purpose: "Facility outreach"
             })
           }
+          onDraftOutreach={() => createOutreachDraft(selectedFacility.id)}
         />
       )}
     </section>
@@ -731,7 +862,7 @@ function GoogleMapShell({ facilities: visibleFacilities, selectedFacility, onSel
   );
 }
 
-function EvidenceDrawer({ facility, shortlisted, onToggleShortlist, onSchedule }) {
+function EvidenceDrawer({ facility, shortlisted, onToggleShortlist, onSchedule, onDraftOutreach }) {
   const meta = tierMeta[facility.tier];
 
   return (
@@ -785,20 +916,119 @@ function EvidenceDrawer({ facility, shortlisted, onToggleShortlist, onSchedule }
         </button>
         <button onClick={onSchedule}>
           <CalendarDays size={17} />
-          Schedule
+          Hold
         </button>
-        {facility.email && (
-          <button>
-            <Mail size={17} />
-            Email
-          </button>
+        <button onClick={onDraftOutreach}>
+          <Mail size={17} />
+          Draft
+        </button>
+      </div>
+    </aside>
+  );
+}
+
+function OutreachPanel({
+  facilities,
+  selectedFacilityId,
+  setSelectedFacilityId,
+  outreachRequests,
+  createOutreachDraft,
+  approveOutreach,
+  approveClinicTime
+}) {
+  const selectedFacility = facilities.find((facility) => facility.id === selectedFacilityId) || facilities[0];
+
+  return (
+    <aside className="sidePanel">
+      <div className="panelHeader">
+        <div>
+          <p className="eyebrow">Human approval</p>
+          <h2>Outreach queue</h2>
+        </div>
+        <span className="countBadge">{outreachRequests.length} drafts</span>
+      </div>
+      <div className="approvalIntro">
+        <AlertCircle size={17} />
+        <p>
+          The agent can draft and summarize, but the doctor must approve outreach, replies, and scheduling
+          confirmations before anything goes to a clinic.
+        </p>
+      </div>
+      <div className="builderForm">
+        <label>
+          Facility
+          <select value={selectedFacilityId} onChange={(event) => setSelectedFacilityId(event.target.value)}>
+            {facilities.map((facility) => (
+              <option key={facility.id} value={facility.id}>
+                {facility.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button className="primaryButton" type="button" onClick={() => createOutreachDraft(selectedFacility.id)}>
+          <Mail size={17} />
+          Draft outreach for approval
+        </button>
+      </div>
+      <div className="approvalStack">
+        {outreachRequests.length ? (
+          outreachRequests.map((request) => {
+            const facility = facilities.find((item) => item.id === request.facilityId);
+            return (
+              <article className="approvalCard" key={request.id}>
+                <div className="approvalTopline">
+                  <div>
+                    <span className={`statusLabel status-${request.status}`}>{formatStatus(request.status)}</span>
+                    <h3>{facility?.name}</h3>
+                    <p>
+                      {request.channel} · {request.destination || "Contact enrichment needed"}
+                    </p>
+                  </div>
+                  <ShieldCheck size={18} />
+                </div>
+                <div className="draftMessage">{request.message}</div>
+                {request.status === "draft" && (
+                  <button className="primaryButton" type="button" onClick={() => approveOutreach(request.id)}>
+                    <Check size={17} />
+                    Approve and mark sent
+                  </button>
+                )}
+                {request.status === "reply_received" && (
+                  <div className="replyBox">
+                    <strong>Clinic reply summary</strong>
+                    <p>{request.replySummary}</p>
+                    <div className="slotGrid">
+                      {request.proposedTimes.map((time) => (
+                        <button key={`${request.id}-${time.label}`} onClick={() => approveClinicTime(request.id, time)}>
+                          <CalendarCheck size={15} />
+                          Approve {time.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {request.status === "appointment_confirmed" && (
+                  <div className="confirmedNote">
+                    <CalendarCheck size={16} />
+                    Confirmed on the calendar for {request.approvedTime.label}
+                  </div>
+                )}
+              </article>
+            );
+          })
+        ) : (
+          <div className="emptyState">
+            <MessageSquareText size={28} />
+            <h3>No outreach drafts yet</h3>
+            <p>Select a facility and draft an outreach message. Nothing is sent without doctor approval.</p>
+          </div>
         )}
       </div>
     </aside>
   );
 }
 
-function SchedulePanel({ facilities, schedule, addSchedule, removeSchedule }) {
+function SchedulePanel({ facilities, schedule, addSchedule, approveSchedule, removeSchedule }) {
   const [facilityId, setFacilityId] = useState(facilities[0].id);
   const [date, setDate] = useState("2026-06-17");
   const [time, setTime] = useState("09:30");
@@ -809,9 +1039,9 @@ function SchedulePanel({ facilities, schedule, addSchedule, removeSchedule }) {
       <div className="panelHeader">
         <div>
           <p className="eyebrow">Schedule</p>
-          <h2>Visit builder</h2>
+          <h2>Calendar</h2>
         </div>
-        <span className="countBadge">{schedule.length} planned</span>
+        <span className="countBadge">{schedule.length} sessions</span>
       </div>
       <form
         className="builderForm"
@@ -846,7 +1076,7 @@ function SchedulePanel({ facilities, schedule, addSchedule, removeSchedule }) {
         </label>
         <button className="primaryButton" type="submit">
           <Plus size={17} />
-          Add visit
+          Create pending hold
         </button>
       </form>
       <div className="plannedList">
@@ -860,10 +1090,18 @@ function SchedulePanel({ facilities, schedule, addSchedule, removeSchedule }) {
                   {entry.date} · {entry.time}
                 </p>
                 <span>{entry.purpose}</span>
+                <small className={`calendarStatus status-${entry.status}`}>{formatStatus(entry.status)}</small>
               </div>
-              <button title="Remove visit" onClick={() => removeSchedule(entry.id)}>
-                <Trash2 size={16} />
-              </button>
+              <div className="plannedActions">
+                {entry.status !== "confirmed" && (
+                  <button title="Approve calendar session" onClick={() => approveSchedule(entry.id)}>
+                    <Check size={16} />
+                  </button>
+                )}
+                <button title="Remove visit" onClick={() => removeSchedule(entry.id)}>
+                  <Trash2 size={16} />
+                </button>
+              </div>
             </div>
           );
         })}
@@ -885,13 +1123,14 @@ function ScheduleRibbon({ schedule, facilities }) {
               entries.map((entry) => {
                 const facility = facilities.find((item) => item.id === entry.facilityId);
                 return (
-                  <div className="visitBlock" key={entry.id}>
+                  <div className={`visitBlock ${entry.status}`} key={entry.id}>
                     <span>
                       <Clock3 size={13} />
                       {entry.time}
                     </span>
                     <strong>{facility?.name}</strong>
                     <p>{entry.purpose}</p>
+                    <em>{entry.status === "confirmed" ? "Confirmed calendar session" : "Pending doctor approval"}</em>
                   </div>
                 );
               })
@@ -975,6 +1214,31 @@ function extractLocalTags(rawText) {
     regions,
     experience: rawText.match(/(\d+)\s*(years|yrs)/i)?.[1] || ""
   };
+}
+
+function buildOutreachMessage(facility, profile) {
+  const specialty = profile.tags.specialties[0] || "medical";
+  const region = profile.tags.regions[0] || facility.state;
+  const contactLine = facility.email
+    ? `I found a public email for ${facility.name}: ${facility.email}.`
+    : `I found a public phone number for ${facility.name}: ${facility.phone}.`;
+
+  return `Hello ${facility.name}, I am a ${specialty} doctor planning referral and volunteer outreach near ${region}. I would like to schedule a short introductory meeting to learn whether my background may be useful to your clinic. ${contactLine}`;
+}
+
+function getApprovalCount(outreachRequests, schedule) {
+  const outreachApprovals = outreachRequests.filter((request) =>
+    ["draft", "reply_received"].includes(request.status)
+  ).length;
+  const calendarApprovals = schedule.filter((entry) => entry.status !== "confirmed").length;
+  return outreachApprovals + calendarApprovals;
+}
+
+function formatStatus(status) {
+  return status
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 function mergeTranscript(current, transcript) {

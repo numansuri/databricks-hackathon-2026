@@ -528,7 +528,8 @@ textarea {
 
 .resultStack,
 .shortlistStack,
-.plannedList {
+.plannedList,
+.approvalStack {
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -536,7 +537,8 @@ textarea {
 
 .facilityCard,
 .plannedItem,
-.emptyState {
+.emptyState,
+.approvalCard {
   border: 1px solid var(--line);
   background: #fff;
   border-radius: 8px;
@@ -996,7 +998,13 @@ textarea {
   font-weight: 800;
 }
 
-.plannedItem button {
+.plannedActions {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+}
+
+.plannedActions button {
   width: 34px;
   height: 34px;
   display: grid;
@@ -1004,8 +1012,141 @@ textarea {
   flex: 0 0 auto;
   border: 0;
   border-radius: 6px;
+}
+
+.plannedActions button:first-child {
+  color: var(--mint);
+  background: var(--mintSoft);
+}
+
+.plannedActions button:last-child {
   color: var(--coral);
   background: var(--coralSoft);
+}
+
+.calendarStatus,
+.statusLabel {
+  width: fit-content;
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  margin-top: 8px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.status-confirmed,
+.status-appointment_confirmed {
+  color: #0f684d;
+  background: var(--mintSoft);
+}
+
+.status-pending_approval,
+.status-draft,
+.status-reply_received {
+  color: #8a5600;
+  background: var(--amberSoft);
+}
+
+.approvalIntro {
+  display: flex;
+  gap: 10px;
+  padding: 12px;
+  color: #405149;
+  background: var(--surfaceWarm);
+  border: 1px solid #f2dfbd;
+  border-radius: 8px;
+}
+
+.approvalIntro svg {
+  flex: 0 0 auto;
+  color: var(--amber);
+}
+
+.approvalIntro p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  font-weight: 700;
+}
+
+.approvalCard {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+
+.approvalTopline {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.approvalTopline h3 {
+  margin: 7px 0 3px;
+  font-size: 15px;
+}
+
+.approvalTopline p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.approvalTopline svg {
+  color: var(--mint);
+}
+
+.draftMessage,
+.replyBox {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fbfdfc;
+  color: #35463f;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.replyBox strong {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.replyBox p {
+  margin: 0;
+}
+
+.slotGrid {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.slotGrid button {
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid #b9dfcf;
+  border-radius: 6px;
+  color: #0f684d;
+  background: var(--mintSoft);
+  font-weight: 900;
+}
+
+.confirmedNote {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #0f684d;
+  font-size: 13px;
+  font-weight: 900;
 }
 
 .scheduleRibbon {
@@ -1044,6 +1185,11 @@ textarea {
   background: var(--mintSoft);
 }
 
+.visitBlock.pending_approval {
+  color: #5d3b00;
+  background: var(--amberSoft);
+}
+
 .visitBlock span {
   display: inline-flex;
   align-items: center;
@@ -1066,6 +1212,14 @@ textarea {
   color: #456157;
   font-size: 12px;
   line-height: 1.35;
+}
+
+.visitBlock em {
+  display: block;
+  margin-top: 7px;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 900;
 }
 
 .emptyDay {
