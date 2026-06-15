@@ -521,9 +521,9 @@ textarea {
 .topBar {
   height: 72px;
   display: grid;
-  grid-template-columns: minmax(230px, 1fr) auto minmax(230px, 1fr);
+  grid-template-columns: minmax(190px, auto) minmax(0, 1fr) auto;
   align-items: center;
-  gap: 20px;
+  gap: 14px;
   padding: 12px 20px;
   border-bottom: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.92);
@@ -531,9 +531,12 @@ textarea {
 }
 
 .tabNav {
+  justify-self: center;
+  max-width: 100%;
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  overflow-x: auto;
   padding: 5px;
   border: 1px solid var(--line);
   background: #f7faf8;
@@ -541,6 +544,7 @@ textarea {
 }
 
 .tabNav button {
+  flex: 0 0 auto;
   min-height: 40px;
   display: inline-flex;
   align-items: center;
@@ -759,7 +763,8 @@ textarea {
 .resultStack,
 .shortlistStack,
 .plannedList,
-.incomingRequestList {
+.incomingRequestList,
+.approvalStack {
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -767,7 +772,8 @@ textarea {
 
 .facilityCard,
 .plannedItem,
-.emptyState {
+.emptyState,
+.approvalCard {
   border: 1px solid var(--line);
   background: #fff;
   border-radius: 8px;
@@ -1498,6 +1504,129 @@ textarea {
   background: var(--coralSoft);
 }
 
+.statusLabel {
+  width: fit-content;
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  margin-top: 0;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.status-draft,
+.status-reply_received {
+  color: #8a5600;
+  background: var(--amberSoft);
+}
+
+.status-appointment_confirmed {
+  color: #0f684d;
+  background: var(--mintSoft);
+}
+
+.approvalIntro {
+  display: flex;
+  gap: 10px;
+  padding: 12px;
+  color: #405149;
+  background: var(--surfaceWarm);
+  border: 1px solid #f2dfbd;
+  border-radius: 8px;
+}
+
+.approvalIntro svg {
+  flex: 0 0 auto;
+  color: var(--amber);
+}
+
+.approvalIntro p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  font-weight: 700;
+}
+
+.approvalCard {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+
+.approvalTopline {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.approvalTopline h3 {
+  margin: 7px 0 3px;
+  font-size: 15px;
+  line-height: 1.25;
+}
+
+.approvalTopline p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.approvalTopline svg {
+  color: var(--mint);
+}
+
+.draftMessage,
+.replyBox {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fbfdfc;
+  color: #35463f;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.replyBox strong {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.replyBox p {
+  margin: 0;
+}
+
+.slotGrid {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.slotGrid button {
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid #b9dfcf;
+  border-radius: 6px;
+  color: #0f684d;
+  background: var(--mintSoft);
+  font-weight: 900;
+}
+
+.confirmedNote {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #0f684d;
+  font-size: 13px;
+  font-weight: 900;
+}
+
 .scheduleRibbon {
   position: absolute;
   left: 22px;
@@ -1534,6 +1663,24 @@ textarea {
   background: var(--mintSoft);
 }
 
+.visitBlock.pending,
+.visitBlock.pending_approval,
+.visitBlock.planned {
+  color: #65440d;
+  background: var(--amberSoft);
+}
+
+.visitBlock.approved,
+.visitBlock.confirmed {
+  color: #17382e;
+  background: var(--mintSoft);
+}
+
+.visitBlock.denied {
+  color: #7a2e27;
+  background: var(--coralSoft);
+}
+
 .visitBlock span {
   display: inline-flex;
   align-items: center;
@@ -1551,11 +1698,24 @@ textarea {
 }
 
 .visitBlock p,
+.visitBlock em,
 .emptyDay {
   margin: 5px 0 0;
   color: #456157;
   font-size: 12px;
   line-height: 1.35;
+}
+
+.visitBlock em {
+  display: block;
+  width: fit-content;
+  margin-top: 8px;
+  padding: 4px 7px;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.58);
+  border-radius: 999px;
+  font-style: normal;
+  font-weight: 900;
 }
 
 .emptyDay {
