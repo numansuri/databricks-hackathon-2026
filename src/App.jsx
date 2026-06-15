@@ -1,0 +1,1036 @@
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  CalendarDays,
+  Check,
+  ChevronRight,
+  ClipboardList,
+  Clock3,
+  Copy,
+  FileText,
+  HeartPulse,
+  Hospital,
+  Mail,
+  MapPin,
+  Mic,
+  Navigation,
+  Phone,
+  Plus,
+  Search,
+  Send,
+  ShieldCheck,
+  Sparkles,
+  Square,
+  Star,
+  Trash2,
+  UserRound,
+  X
+} from "lucide-react";
+
+const PROFILE_KEY = "referralCopilotDoctorProfile";
+const DOCTOR_ID_KEY = "referralCopilotDoctorId";
+
+const facilities = [
+  {
+    id: "shaurya",
+    name: "Shaurya Heart & Critical Care",
+    type: "Multispecialty hospital",
+    city: "Ahmedabad",
+    state: "Gujarat",
+    distanceKm: 4.2,
+    tier: "strong",
+    score: 4.6,
+    lat: 23.0225,
+    lng: 72.5714,
+    phone: "+91 98251 47300",
+    email: "referrals@shauryaheart.in",
+    match: "Cardiology, ICU, emergency procedure support",
+    evidence: [
+      { field: "capability", text: "Critical care, cardiology, cardiac emergency stabilization" },
+      { field: "procedure", text: "Angiography support, post-operative cardiac monitoring" },
+      { field: "equipment", text: "ICU beds, ventilator support, cardiac monitors" }
+    ],
+    flags: ["Pincode-verified coordinates"],
+    map: { x: 56, y: 42 }
+  },
+  {
+    id: "city",
+    name: "City Medical Institute",
+    type: "Referral center",
+    city: "Gandhinagar",
+    state: "Gujarat",
+    distanceKm: 18.7,
+    tier: "partial",
+    score: 2.8,
+    lat: 23.2156,
+    lng: 72.6369,
+    phone: "+91 79401 88820",
+    email: "care@citymedical.in",
+    match: "Internal medicine, diagnostics, cardiology claims",
+    evidence: [
+      { field: "specialties", text: "Internal medicine, cardiology outpatient care" },
+      { field: "description", text: "Handles cardiac symptoms and routine diagnostics" }
+    ],
+    flags: ["Capability appears in description only"],
+    map: { x: 66, y: 28 }
+  },
+  {
+    id: "metro",
+    name: "Metro Community Clinic",
+    type: "Clinic",
+    city: "Sanand",
+    state: "Gujarat",
+    distanceKm: 31.4,
+    tier: "weak",
+    score: 1.4,
+    lat: 22.9924,
+    lng: 72.3817,
+    phone: "+91 27172 22440",
+    email: "",
+    match: "Basic triage, low-volume cardiac evidence",
+    evidence: [
+      { field: "description", text: "Mentions heart and diabetes screening camps" }
+    ],
+    flags: ["Single source only", "Low physician count for hospital-level service"],
+    map: { x: 36, y: 56 }
+  }
+];
+
+const quickPrompts = [
+  "Emergency cardiac care near Ahmedabad",
+  "Volunteer cardiology camp in rural Rajasthan",
+  "Facilities with ICU equipment and reliable phone contacts"
+];
+
+const weekDays = [
+  "Mon, Jun 15",
+  "Tue, Jun 16",
+  "Wed, Jun 17",
+  "Thu, Jun 18",
+  "Fri, Jun 19"
+];
+
+const tierMeta = {
+  strong: { label: "Strong", className: "tierStrong" },
+  partial: { label: "Partial", className: "tierPartial" },
+  weak: { label: "Weak", className: "tierWeak" }
+};
+
+function getDoctorId() {
+  let id = localStorage.getItem(DOCTOR_ID_KEY);
+  if (!id) {
+    id = crypto.randomUUID();
+    localStorage.setItem(DOCTOR_ID_KEY, id);
+  }
+  return id;
+}
+
+function App() {
+  const [doctorId] = useState(getDoctorId);
+  const [profile, setProfile] = useState(() => {
+    const saved = localStorage.getItem(PROFILE_KEY);
+    return saved ? JSON.parse(saved) : null;
+  });
+  const [activeView, setActiveView] = useState("search");
+  const [selectedFacilityId, setSelectedFacilityId] = useState(facilities[0].id);
+  const [shortlist, setShortlist] = useState([facilities[0].id]);
+  const [schedule, setSchedule] = useState([
+    {
+      id: "visit-1",
+      facilityId: facilities[0].id,
+      date: "2026-06-16",
+      time: "10:30",
+      purpose: "Cardiology referral discussion"
+    }
+  ]);
+
+  const selectedFacility = facilities.find((facility) => facility.id === selectedFacilityId) || facilities[0];
+
+  function saveProfile(rawText) {
+    const nextProfile = {
+      doctorId,
+      rawText,
+      tags: extractLocalTags(rawText),
+      createdAt: new Date().toISOString()
+    };
+    localStorage.setItem(PROFILE_KEY, JSON.stringify(nextProfile));
+    setProfile(nextProfile);
+  }
+
+  function resetProfile() {
+    localStorage.removeItem(PROFILE_KEY);
+    setProfile(null);
+  }
+
+  function toggleShortlist(id) {
+    setShortlist((current) =>
+      current.includes(id) ? current.filter((item) => item !== id) : [...current, id]
+    );
+  }
+
+  function addSchedule(entry) {
+    setSchedule((current) => [{ id: crypto.randomUUID(), ...entry }, ...current]);
+    setActiveView("schedule");
+  }
+
+  function removeSchedule(id) {
+    setSchedule((current) => current.filter((entry) => entry.id !== id));
+  }
+
+  if (!profile) {
+    return <Onboarding onComplete={saveProfile} />;
+  }
+
+  return (
+    <div className="appShell">
+      <TopBar
+        activeView={activeView}
+        setActiveView={setActiveView}
+        shortlistCount={shortlist.length}
+        profile={profile}
+        onResetProfile={resetProfile}
+      />
+      <main className="workspace">
+        <LeftPanel
+          activeView={activeView}
+          setActiveView={setActiveView}
+          facilities={facilities}
+          selectedFacilityId={selectedFacilityId}
+          setSelectedFacilityId={setSelectedFacilityId}
+          shortlist={shortlist}
+          toggleShortlist={toggleShortlist}
+          schedule={schedule}
+          addSchedule={addSchedule}
+          removeSchedule={removeSchedule}
+          profile={profile}
+        />
+        <MapWorkspace
+          activeView={activeView}
+          facilities={facilities}
+          selectedFacility={selectedFacility}
+          setSelectedFacilityId={setSelectedFacilityId}
+          shortlist={shortlist}
+          toggleShortlist={toggleShortlist}
+          schedule={schedule}
+          addSchedule={addSchedule}
+        />
+      </main>
+    </div>
+  );
+}
+
+function Onboarding({ onComplete }) {
+  const [text, setText] = useState("");
+  const [recording, setRecording] = useState(false);
+  const [status, setStatus] = useState("idle");
+  const [error, setError] = useState("");
+  const recorderRef = useRef(null);
+  const chunksRef = useRef([]);
+
+  async function startRecording() {
+    setError("");
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      chunksRef.current = [];
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) chunksRef.current.push(event.data);
+      };
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((track) => track.stop());
+        const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+        await transcribe(blob);
+      };
+      recorderRef.current = recorder;
+      recorder.start();
+      setRecording(true);
+      setStatus("listening");
+    } catch {
+      setError("Microphone access is unavailable in this browser session.");
+      setStatus("idle");
+    }
+  }
+
+  function stopRecording() {
+    if (!recorderRef.current) return;
+    recorderRef.current.stop();
+    setRecording(false);
+    setStatus("transcribing");
+  }
+
+  async function transcribe(blob) {
+    try {
+      const formData = new FormData();
+      formData.append("audio", blob, "doctor-profile.webm");
+      const response = await fetch("/api/transcribe", {
+        method: "POST",
+        body: formData
+      });
+      if (!response.ok) throw new Error("Transcription failed");
+      const data = await response.json();
+      const transcript = data.transcript || data.text || "";
+      if (!transcript) throw new Error("Empty transcript");
+      setText((current) => mergeTranscript(current, transcript));
+      setStatus("ready");
+    } catch {
+      const demoTranscript =
+        "I am a cardiologist with 10 years of ICU experience. I can support emergency cardiac referrals, hypertension care, and volunteer cardiac screening camps in Gujarat and Rajasthan.";
+      setText((current) => mergeTranscript(current, demoTranscript));
+      setStatus("demo");
+    }
+  }
+
+  const canSubmit = text.trim().length > 20;
+
+  return (
+    <main className="onboarding">
+      <section className="onboardingPanel">
+        <div className="brandLockup setupBrand">
+          <span className="brandMark">
+            <HeartPulse size={25} />
+          </span>
+          <div>
+            <h1>Referral Copilot</h1>
+            <p>Doctor context setup</p>
+          </div>
+        </div>
+        <div className="onboardingGrid">
+          <div className="onboardingPrompt">
+            <div className="eyebrow">
+              <Sparkles size={16} />
+              Profile setup
+            </div>
+            <h2>Start with the context that should shape every referral.</h2>
+            <p>
+              Add specialties, years of experience, languages, preferred regions, and volunteering interests.
+              You can update, add, or remove this context later by telling the chatbot.
+            </p>
+            <div className="setupNotes">
+              <div>
+                <Check size={16} />
+                Used to rank facilities and draft outreach.
+              </div>
+              <div>
+                <Mic size={16} />
+                Speak first, then edit the transcript before saving.
+              </div>
+              <div>
+                <X size={16} />
+                Remove stale preferences anytime in chat.
+              </div>
+            </div>
+            <div className="profileExamples">
+              <span>Cardiology</span>
+              <span>Critical care</span>
+              <span>Rural camps</span>
+              <span>Gujarat</span>
+            </div>
+          </div>
+          <form
+            className="profileForm"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (canSubmit) onComplete(text.trim());
+            }}
+          >
+            <div className="textareaFrame">
+              <textarea
+                value={text}
+                onChange={(event) => setText(event.target.value)}
+                placeholder="I am a cardiologist with ICU experience. I usually refer patients for cardiac emergencies, prefer Gujarat and Rajasthan, and can volunteer for rural screening camps..."
+              />
+              <div className="transcriptionDock">
+                <button
+                  type="button"
+                  className={`iconTextButton ${recording ? "dangerButton" : ""}`}
+                  onClick={recording ? stopRecording : startRecording}
+                >
+                  {recording ? <Square size={17} /> : <Mic size={17} />}
+                  {recording ? "Stop" : "Speak"}
+                </button>
+                <StatusPill status={status} />
+              </div>
+            </div>
+            {error && <p className="formError">{error}</p>}
+            <div className="formActions">
+              <button
+                type="button"
+                className="ghostButton"
+                onClick={() =>
+                  setText(
+                    "I am a general physician with eight years of experience in diabetes and hypertension care. I can volunteer monthly for rural screening camps and prefer facilities in Gujarat, Rajasthan, and Maharashtra."
+                  )
+                }
+              >
+                <FileText size={17} />
+                Use sample
+              </button>
+              <button type="submit" className="primaryButton" disabled={!canSubmit}>
+                Continue
+                <ChevronRight size={18} />
+              </button>
+            </div>
+          </form>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function StatusPill({ status }) {
+  const copy = {
+    idle: "Ready",
+    listening: "Listening",
+    transcribing: "Transcribing",
+    ready: "Transcript added",
+    demo: "Demo transcript"
+  }[status];
+
+  return <span className={`statusPill status-${status}`}>{copy}</span>;
+}
+
+function TopBar({ activeView, setActiveView, shortlistCount, profile, onResetProfile }) {
+  const tabs = [
+    { id: "search", label: "Search", icon: Search },
+    { id: "schedule", label: "Schedule", icon: CalendarDays },
+    { id: "shortlist", label: `Shortlist (${shortlistCount})`, icon: Star }
+  ];
+
+  return (
+    <header className="topBar">
+      <div className="brandLockup compact">
+        <span className="brandMark">
+          <HeartPulse size={22} />
+        </span>
+        <div>
+          <h1>Referral Copilot</h1>
+          <p>Evidence-first referrals</p>
+        </div>
+      </div>
+      <nav className="tabNav" aria-label="Primary">
+        {tabs.map((tab) => {
+          const Icon = tab.icon;
+          return (
+            <button
+              key={tab.id}
+              className={activeView === tab.id ? "active" : ""}
+              onClick={() => setActiveView(tab.id)}
+            >
+              <Icon size={17} />
+              {tab.label}
+            </button>
+          );
+        })}
+      </nav>
+      <div className="profileChip">
+        <UserRound size={17} />
+        <span>{profile.tags.specialties[0] || "Doctor"}</span>
+        <button title="Reset profile" onClick={onResetProfile}>
+          <X size={14} />
+        </button>
+      </div>
+    </header>
+  );
+}
+
+function LeftPanel(props) {
+  if (props.activeView === "schedule") {
+    return <SchedulePanel {...props} />;
+  }
+  if (props.activeView === "shortlist") {
+    return <ShortlistPanel {...props} />;
+  }
+  return <SearchPanel {...props} />;
+}
+
+function SearchPanel({
+  facilities,
+  selectedFacilityId,
+  setSelectedFacilityId,
+  shortlist,
+  toggleShortlist,
+  addSchedule,
+  profile
+}) {
+  const [input, setInput] = useState("");
+  const [messages, setMessages] = useState([
+    {
+      role: "assistant",
+      text: `I’ll prioritize ${profile.tags.specialties.join(", ") || "your specialties"} and show the evidence behind each match. You can also say “update my profile” or “forget my Rajasthan preference” and I’ll adjust your context.`
+    }
+  ]);
+
+  function submitSearch(query) {
+    const nextQuery = query || input;
+    if (!nextQuery.trim()) return;
+    setMessages((current) => [
+      ...current,
+      { role: "user", text: nextQuery.trim() },
+      {
+        role: "assistant",
+        text: "I found three facilities with cardiac evidence near Ahmedabad. Strong matches include corroborated capability, procedure, and equipment fields."
+      }
+    ]);
+    setInput("");
+  }
+
+  return (
+    <aside className="sidePanel">
+      <div className="panelHeader">
+        <div>
+          <p className="eyebrow">Search</p>
+          <h2>Referral chat</h2>
+        </div>
+        <span className="countBadge">{facilities.length} matches</span>
+      </div>
+      <div className="quickPromptRow">
+        {quickPrompts.map((prompt) => (
+          <button key={prompt} onClick={() => submitSearch(prompt)}>
+            {prompt}
+          </button>
+        ))}
+      </div>
+      <div className="chatLog">
+        {messages.map((message, index) => (
+          <div key={`${message.role}-${index}`} className={`message ${message.role}`}>
+            {message.text}
+          </div>
+        ))}
+      </div>
+      <form
+        className="chatInput"
+        onSubmit={(event) => {
+          event.preventDefault();
+          submitSearch();
+        }}
+      >
+        <input
+          value={input}
+          onChange={(event) => setInput(event.target.value)}
+          placeholder="Need emergency cardiac care near Ahmedabad"
+        />
+        <button title="Send search" type="submit">
+          <Send size={18} />
+        </button>
+      </form>
+      <div className="resultStack">
+        {facilities.map((facility) => (
+          <FacilityCard
+            key={facility.id}
+            facility={facility}
+            selected={facility.id === selectedFacilityId}
+            shortlisted={shortlist.includes(facility.id)}
+            onSelect={() => setSelectedFacilityId(facility.id)}
+            onToggleShortlist={() => toggleShortlist(facility.id)}
+            onSchedule={() =>
+              addSchedule({
+                facilityId: facility.id,
+                date: "2026-06-17",
+                time: "14:00",
+                purpose: "Referral call"
+              })
+            }
+          />
+        ))}
+      </div>
+    </aside>
+  );
+}
+
+function FacilityCard({ facility, selected, shortlisted, onSelect, onToggleShortlist, onSchedule }) {
+  const meta = tierMeta[facility.tier];
+  return (
+    <article className={`facilityCard ${selected ? "selected" : ""}`} onClick={onSelect}>
+      <div className="facilityTopline">
+        <span className={`tierDot ${meta.className}`} />
+        <div>
+          <h3>{facility.name}</h3>
+          <p>{facility.type}</p>
+        </div>
+        <span className={`tierBadge ${meta.className}`}>{meta.label}</span>
+      </div>
+      <div className="facilityMeta">
+        <span>
+          <MapPin size={14} />
+          {facility.distanceKm} km
+        </span>
+        <span>
+          <ShieldCheck size={14} />
+          {facility.score.toFixed(1)}
+        </span>
+      </div>
+      <p className="facilityMatch">{facility.match}</p>
+      <div className="cardActions">
+        <button type="button" onClick={(event) => runButtonAction(event, onToggleShortlist)}>
+          {shortlisted ? <Check size={15} /> : <Plus size={15} />}
+          {shortlisted ? "Saved" : "Save"}
+        </button>
+        <button type="button" onClick={(event) => runButtonAction(event, onSchedule)}>
+          <CalendarDays size={15} />
+          Plan
+        </button>
+      </div>
+    </article>
+  );
+}
+
+function MapWorkspace({
+  activeView,
+  facilities,
+  selectedFacility,
+  setSelectedFacilityId,
+  shortlist,
+  toggleShortlist,
+  schedule,
+  addSchedule
+}) {
+  const visibleFacilities = useMemo(() => {
+    if (activeView === "shortlist") {
+      return facilities.filter((facility) => shortlist.includes(facility.id));
+    }
+    if (activeView === "schedule") {
+      return facilities.filter((facility) => schedule.some((entry) => entry.facilityId === facility.id));
+    }
+    return facilities;
+  }, [activeView, facilities, schedule, shortlist]);
+
+  return (
+    <section className="mapWorkspace">
+      <GoogleMapShell
+        facilities={visibleFacilities.length ? visibleFacilities : facilities}
+        selectedFacility={selectedFacility}
+        onSelect={setSelectedFacilityId}
+      />
+      <div className="mapToolbar">
+        <div>
+          <p className="eyebrow">{activeView === "schedule" ? "Route view" : "District context"}</p>
+          <h2>
+            {activeView === "schedule"
+              ? "Ahmedabad visit plan"
+              : "Ahmedabad district: hypertension 35%, anaemia 48%"}
+          </h2>
+        </div>
+        <button>
+          <Navigation size={17} />
+          Optimize
+        </button>
+      </div>
+      {activeView === "schedule" ? (
+        <ScheduleRibbon schedule={schedule} facilities={facilities} />
+      ) : (
+        <EvidenceDrawer
+          facility={selectedFacility}
+          shortlisted={shortlist.includes(selectedFacility.id)}
+          onToggleShortlist={() => toggleShortlist(selectedFacility.id)}
+          onSchedule={() =>
+            addSchedule({
+              facilityId: selectedFacility.id,
+              date: "2026-06-18",
+              time: "11:00",
+              purpose: "Facility outreach"
+            })
+          }
+        />
+      )}
+    </section>
+  );
+}
+
+function GoogleMapShell({ facilities: visibleFacilities, selectedFacility, onSelect }) {
+  const mapRef = useRef(null);
+  const instanceRef = useRef(null);
+  const markerRef = useRef([]);
+  const infoWindowRef = useRef(null);
+  const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
+  const mapId = import.meta.env.VITE_GOOGLE_MAP_ID || "DEMO_MAP_ID";
+
+  useEffect(() => {
+    if (!apiKey || !mapRef.current) return;
+    let cancelled = false;
+
+    loadGoogleMaps(apiKey).then(() => {
+      if (cancelled || !mapRef.current) return;
+      if (!instanceRef.current) {
+        instanceRef.current = new window.google.maps.Map(mapRef.current, {
+          center: { lat: selectedFacility.lat, lng: selectedFacility.lng },
+          zoom: 10,
+          disableDefaultUI: true,
+          zoomControl: true,
+          mapTypeControl: false,
+          fullscreenControl: false,
+          streetViewControl: false,
+          mapId
+        });
+      }
+      if (!infoWindowRef.current) {
+        infoWindowRef.current = new window.google.maps.InfoWindow();
+      }
+      const map = instanceRef.current;
+      const bounds = new window.google.maps.LatLngBounds();
+      visibleFacilities.forEach((facility) => bounds.extend({ lat: facility.lat, lng: facility.lng }));
+      if (visibleFacilities.length > 1) {
+        map.fitBounds(bounds, 88);
+      } else {
+        map.setCenter({ lat: selectedFacility.lat, lng: selectedFacility.lng });
+        map.setZoom(11);
+      }
+      markerRef.current.forEach((marker) => {
+        marker.map = null;
+      });
+      markerRef.current = visibleFacilities.map((facility) => {
+        const isSelected = facility.id === selectedFacility.id;
+        const marker = new window.google.maps.marker.AdvancedMarkerElement({
+          position: { lat: facility.lat, lng: facility.lng },
+          map,
+          title: facility.name,
+          content: makeGoogleMarkerContent(facility.tier, isSelected),
+          zIndex: isSelected ? 20 : 10
+        });
+        marker.addEventListener("gmp-click", () => {
+          onSelect(facility.id);
+          infoWindowRef.current.setContent(renderMapInfo(facility));
+          infoWindowRef.current.open({ anchor: marker, map });
+        });
+        return marker;
+      });
+      map.panTo({ lat: selectedFacility.lat, lng: selectedFacility.lng });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [apiKey, mapId, onSelect, selectedFacility.lat, selectedFacility.lng, visibleFacilities]);
+
+  if (apiKey) {
+    return (
+      <>
+        <div className="googleMap" ref={mapRef} />
+        <div className="mapProviderBadge">Google Maps · pseudo facility data</div>
+      </>
+    );
+  }
+
+  return (
+    <div className="fallbackMap" aria-label="Map preview">
+      <div className="mapKeyHint">Add VITE_GOOGLE_MAPS_API_KEY to use Google Maps</div>
+      <div className="arterial roadA" />
+      <div className="arterial roadB" />
+      <div className="arterial roadC" />
+      <div className="riverLine" />
+      {visibleFacilities.map((facility) => (
+        <button
+          key={facility.id}
+          className={`mapMarker ${facility.tier} ${facility.id === selectedFacility.id ? "selected" : ""}`}
+          style={{ left: `${facility.map.x}%`, top: `${facility.map.y}%` }}
+          onClick={() => onSelect(facility.id)}
+          title={facility.name}
+        >
+          <Hospital size={18} />
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function EvidenceDrawer({ facility, shortlisted, onToggleShortlist, onSchedule }) {
+  const meta = tierMeta[facility.tier];
+
+  return (
+    <aside className="evidenceDrawer">
+      <div className="drawerHeader">
+        <div>
+          <span className={`tierBadge ${meta.className}`}>{meta.label} evidence</span>
+          <h2>{facility.name}</h2>
+          <p>
+            {facility.city}, {facility.state} · {facility.distanceKm} km
+          </p>
+        </div>
+        <button title="Copy details">
+          <Copy size={16} />
+        </button>
+      </div>
+      <div className="contactGrid">
+        <a href={`tel:${facility.phone}`}>
+          <Phone size={15} />
+          {facility.phone}
+        </a>
+        {facility.email ? (
+          <a href={`mailto:${facility.email}`}>
+            <Mail size={15} />
+            {facility.email}
+          </a>
+        ) : (
+          <span>
+            <Mail size={15} />
+            No email listed
+          </span>
+        )}
+      </div>
+      <div className="evidenceList">
+        {facility.evidence.map((item) => (
+          <div key={`${facility.id}-${item.field}`}>
+            <span>{item.field}</span>
+            <p>{item.text}</p>
+          </div>
+        ))}
+      </div>
+      <div className="flagList">
+        {facility.flags.map((flag) => (
+          <span key={flag}>{flag}</span>
+        ))}
+      </div>
+      <div className="drawerActions">
+        <button onClick={onToggleShortlist}>
+          {shortlisted ? <Check size={17} /> : <Plus size={17} />}
+          {shortlisted ? "Saved" : "Shortlist"}
+        </button>
+        <button onClick={onSchedule}>
+          <CalendarDays size={17} />
+          Schedule
+        </button>
+        {facility.email && (
+          <button>
+            <Mail size={17} />
+            Email
+          </button>
+        )}
+      </div>
+    </aside>
+  );
+}
+
+function SchedulePanel({ facilities, schedule, addSchedule, removeSchedule }) {
+  const [facilityId, setFacilityId] = useState(facilities[0].id);
+  const [date, setDate] = useState("2026-06-17");
+  const [time, setTime] = useState("09:30");
+  const [purpose, setPurpose] = useState("Volunteer screening camp");
+
+  return (
+    <aside className="sidePanel schedulePanel">
+      <div className="panelHeader">
+        <div>
+          <p className="eyebrow">Schedule</p>
+          <h2>Visit builder</h2>
+        </div>
+        <span className="countBadge">{schedule.length} planned</span>
+      </div>
+      <form
+        className="builderForm"
+        onSubmit={(event) => {
+          event.preventDefault();
+          addSchedule({ facilityId, date, time, purpose });
+        }}
+      >
+        <label>
+          Facility
+          <select value={facilityId} onChange={(event) => setFacilityId(event.target.value)}>
+            {facilities.map((facility) => (
+              <option key={facility.id} value={facility.id}>
+                {facility.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="formSplit">
+          <label>
+            Date
+            <input type="date" value={date} onChange={(event) => setDate(event.target.value)} />
+          </label>
+          <label>
+            Time
+            <input type="time" value={time} onChange={(event) => setTime(event.target.value)} />
+          </label>
+        </div>
+        <label>
+          Purpose
+          <input value={purpose} onChange={(event) => setPurpose(event.target.value)} />
+        </label>
+        <button className="primaryButton" type="submit">
+          <Plus size={17} />
+          Add visit
+        </button>
+      </form>
+      <div className="plannedList">
+        {schedule.map((entry) => {
+          const facility = facilities.find((item) => item.id === entry.facilityId);
+          return (
+            <div className="plannedItem" key={entry.id}>
+              <div>
+                <h3>{facility?.name}</h3>
+                <p>
+                  {entry.date} · {entry.time}
+                </p>
+                <span>{entry.purpose}</span>
+              </div>
+              <button title="Remove visit" onClick={() => removeSchedule(entry.id)}>
+                <Trash2 size={16} />
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </aside>
+  );
+}
+
+function ScheduleRibbon({ schedule, facilities }) {
+  return (
+    <div className="scheduleRibbon">
+      {weekDays.map((day) => {
+        const dayNumber = day.match(/Jun (\d+)/)?.[1];
+        const entries = schedule.filter((entry) => entry.date.endsWith(`-${dayNumber?.padStart(2, "0")}`));
+        return (
+          <div className="dayColumn" key={day}>
+            <h3>{day}</h3>
+            {entries.length ? (
+              entries.map((entry) => {
+                const facility = facilities.find((item) => item.id === entry.facilityId);
+                return (
+                  <div className="visitBlock" key={entry.id}>
+                    <span>
+                      <Clock3 size={13} />
+                      {entry.time}
+                    </span>
+                    <strong>{facility?.name}</strong>
+                    <p>{entry.purpose}</p>
+                  </div>
+                );
+              })
+            ) : (
+              <p className="emptyDay">Open</p>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ShortlistPanel({
+  facilities,
+  shortlist,
+  selectedFacilityId,
+  setSelectedFacilityId,
+  toggleShortlist,
+  addSchedule
+}) {
+  const savedFacilities = facilities.filter((facility) => shortlist.includes(facility.id));
+
+  return (
+    <aside className="sidePanel">
+      <div className="panelHeader">
+        <div>
+          <p className="eyebrow">Shortlist</p>
+          <h2>Saved facilities</h2>
+        </div>
+        <span className="countBadge">{savedFacilities.length} saved</span>
+      </div>
+      <div className="shortlistStack">
+        {savedFacilities.length ? (
+          savedFacilities.map((facility) => (
+            <FacilityCard
+              key={facility.id}
+              facility={facility}
+              selected={facility.id === selectedFacilityId}
+              shortlisted
+              onSelect={() => setSelectedFacilityId(facility.id)}
+              onToggleShortlist={() => toggleShortlist(facility.id)}
+              onSchedule={() =>
+                addSchedule({
+                  facilityId: facility.id,
+                  date: "2026-06-19",
+                  time: "12:00",
+                  purpose: "Shortlist follow-up"
+                })
+              }
+            />
+          ))
+        ) : (
+          <div className="emptyState">
+            <ClipboardList size={28} />
+            <h3>No saved facilities</h3>
+            <p>Save facilities from search to compare evidence and plan outreach.</p>
+          </div>
+        )}
+      </div>
+    </aside>
+  );
+}
+
+function extractLocalTags(rawText) {
+  const specialties = [
+    ["cardiology", /cardio|heart|hypertension/i],
+    ["critical care", /icu|critical|emergency/i],
+    ["diabetes", /diabetes|endocr/i],
+    ["general medicine", /general|physician|medicine/i]
+  ]
+    .filter(([, pattern]) => pattern.test(rawText))
+    .map(([label]) => label);
+
+  const regions = ["Gujarat", "Rajasthan", "Maharashtra", "rural"].filter((region) =>
+    new RegExp(region, "i").test(rawText)
+  );
+
+  return {
+    specialties: specialties.length ? specialties : ["general medicine"],
+    regions,
+    experience: rawText.match(/(\d+)\s*(years|yrs)/i)?.[1] || ""
+  };
+}
+
+function mergeTranscript(current, transcript) {
+  return current.trim() ? `${current.trim()}\n\n${transcript}` : transcript;
+}
+
+function runButtonAction(event, action) {
+  event.stopPropagation();
+  action();
+}
+
+function loadGoogleMaps(apiKey) {
+  if (window.google?.maps?.Map && window.google?.maps?.marker?.AdvancedMarkerElement) {
+    return Promise.resolve();
+  }
+  if (window.__referralGoogleMapsPromise) {
+    return window.__referralGoogleMapsPromise;
+  }
+  const existing = document.querySelector("script[data-google-maps]");
+  if (existing && !window.google?.maps?.Map) {
+    existing.remove();
+  }
+  window.__referralGoogleMapsPromise = new Promise((resolve, reject) => {
+    window.__initReferralGoogleMaps = () => {
+      resolve();
+    };
+    const script = document.createElement("script");
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&v=weekly&loading=async&libraries=marker&callback=__initReferralGoogleMaps`;
+    script.async = true;
+    script.defer = true;
+    script.dataset.googleMaps = "true";
+    script.onerror = () => {
+      window.__referralGoogleMapsPromise = null;
+      reject(new Error("Unable to load Google Maps"));
+    };
+    document.head.appendChild(script);
+  });
+  return window.__referralGoogleMapsPromise;
+}
+
+function makeGoogleMarkerContent(tier, selected) {
+  const marker = document.createElement("div");
+  marker.className = `googleMarkerPin ${tier} ${selected ? "selected" : ""}`;
+  marker.innerHTML = `<span></span>`;
+  return marker;
+}
+
+function renderMapInfo(facility) {
+  const tierLabel = tierMeta[facility.tier].label;
+  return `
+    <div class="gmInfo">
+      <strong>${facility.name}</strong>
+      <span>${facility.city}, ${facility.state} · ${facility.distanceKm} km</span>
+      <em>${tierLabel} evidence</em>
+    </div>
+  `;
+}
+
+export default App;
