@@ -6,9 +6,11 @@ import {
   ClipboardList,
   Clock3,
   Copy,
+  ExternalLink,
   FileText,
   HeartPulse,
   Hospital,
+  LogOut,
   Mail,
   MapPin,
   Mic,
@@ -22,12 +24,18 @@ import {
   Square,
   Star,
   Trash2,
+  UserPlus,
   UserRound,
   X
 } from "lucide-react";
 
-const PROFILE_KEY = "referralCopilotDoctorProfile";
-const DOCTOR_ID_KEY = "referralCopilotDoctorId";
+const USER_DATABASE_KEY = "referralCopilotUsers";
+const SESSION_USER_KEY = "referralCopilotSessionUserId";
+const SCHEDULE_REQUESTS_KEY = "referralCopilotScheduleRequests";
+const SAMPLE_PROFILE_TEXT =
+  "I am a general physician with eight years of experience in diabetes and hypertension care. I can volunteer monthly for rural screening camps and prefer facilities in Gujarat, Rajasthan, and Maharashtra.";
+const DEMO_PROFILE_TRANSCRIPT =
+  "I am a cardiologist with 10 years of ICU experience. I can support emergency cardiac referrals, hypertension care, and volunteer cardiac screening camps in Gujarat and Rajasthan.";
 
 const facilities = [
   {
@@ -115,111 +123,110 @@ const tierMeta = {
   weak: { label: "Weak", className: "tierWeak" }
 };
 
-function getDoctorId() {
-  let id = localStorage.getItem(DOCTOR_ID_KEY);
-  if (!id) {
-    id = crypto.randomUUID();
-    localStorage.setItem(DOCTOR_ID_KEY, id);
+const requestStatusMeta = {
+  planned: { label: "Planned", className: "statusPlanned" },
+  pending: { label: "Pending", className: "statusPending" },
+  approved: { label: "Approved", className: "statusApproved" },
+  denied: { label: "Denied", className: "statusDenied" }
+};
+
+function readJson(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch {
+    return fallback;
   }
-  return id;
 }
 
-function App() {
-  const [doctorId] = useState(getDoctorId);
-  const [profile, setProfile] = useState(() => {
-    const saved = localStorage.getItem(PROFILE_KEY);
-    return saved ? JSON.parse(saved) : null;
-  });
-  const [activeView, setActiveView] = useState("search");
-  const [selectedFacilityId, setSelectedFacilityId] = useState(facilities[0].id);
-  const [shortlist, setShortlist] = useState([facilities[0].id]);
-  const [schedule, setSchedule] = useState([
-    {
-      id: "visit-1",
-      facilityId: facilities[0].id,
-      date: "2026-06-16",
-      time: "10:30",
-      purpose: "Cardiology referral discussion"
-    }
-  ]);
+function saveJson(key, value) {
+  localStorage.setItem(key, JSON.stringify(value));
+}
 
-  const selectedFacility = facilities.find((facility) => facility.id === selectedFacilityId) || facilities[0];
+function normalizeEmail(email) {
+  return email.trim().toLowerCase();
+}
 
-  function saveProfile(rawText) {
-    const nextProfile = {
-      doctorId,
-      rawText,
-      tags: extractLocalTags(rawText),
-      createdAt: new Date().toISOString()
-    };
-    localStorage.setItem(PROFILE_KEY, JSON.stringify(nextProfile));
-    setProfile(nextProfile);
-  }
+function getProfileKey(userId) {
+  return `referralCopilotDoctorProfile:${userId}`;
+}
 
-  function resetProfile() {
-    localStorage.removeItem(PROFILE_KEY);
-    setProfile(null);
-  }
+function getDisplayName(user) {
+  if (!user) return "";
+  return user.name || user.email?.split("@")[0] || "User";
+}
 
-  function toggleShortlist(id) {
-    setShortlist((current) =>
-      current.includes(id) ? current.filter((item) => item !== id) : [...current, id]
-    );
-  }
+function getFacilityName(facilityId) {
+  return facilities.find((facility) => facility.id === facilityId)?.name || "Unknown facility";
+}
 
-  function addSchedule(entry) {
-    setSchedule((current) => [{ id: crypto.randomUUID(), ...entry }, ...current]);
-    setActiveView("schedule");
-  }
+function getRequestDirection(request) {
+  return request.direction || "doctor_to_hospital";
+}
 
-  function removeSchedule(id) {
-    setSchedule((current) => current.filter((entry) => entry.id !== id));
-  }
+function normalizeOptionalUrl(url) {
+  const trimmed = url.trim();
+  if (!trimmed) return "";
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+}
 
-  if (!profile) {
-    return <Onboarding onComplete={saveProfile} />;
-  }
-
+function getHospitalProfile(user) {
   return (
-    <div className="appShell">
-      <TopBar
-        activeView={activeView}
-        setActiveView={setActiveView}
-        shortlistCount={shortlist.length}
-        profile={profile}
-        onResetProfile={resetProfile}
-      />
-      <main className="workspace">
-        <LeftPanel
-          activeView={activeView}
-          setActiveView={setActiveView}
-          facilities={facilities}
-          selectedFacilityId={selectedFacilityId}
-          setSelectedFacilityId={setSelectedFacilityId}
-          shortlist={shortlist}
-          toggleShortlist={toggleShortlist}
-          schedule={schedule}
-          addSchedule={addSchedule}
-          removeSchedule={removeSchedule}
-          profile={profile}
-        />
-        <MapWorkspace
-          activeView={activeView}
-          facilities={facilities}
-          selectedFacility={selectedFacility}
-          setSelectedFacilityId={setSelectedFacilityId}
-          shortlist={shortlist}
-          toggleShortlist={toggleShortlist}
-          schedule={schedule}
-          addSchedule={addSchedule}
-        />
-      </main>
-    </div>
+    user.hospitalProfile || {
+      name: getDisplayName(user),
+      streetAddress: "",
+      phone: "",
+      facebookUrl: ""
+    }
   );
 }
 
-function Onboarding({ onComplete }) {
-  const [text, setText] = useState("");
+function getHospitalFacility(user) {
+  if (!user) return facilities[0];
+  const legacyFacility = facilities.find((item) => item.id === user.facilityId);
+  if (legacyFacility && !user.hospitalProfile) return legacyFacility;
+
+  const profile = getHospitalProfile(user);
+  const evidence = [
+    { field: "Hospital-entered address", text: profile.streetAddress || "Not provided" },
+    { field: "Hospital-entered phone", text: profile.phone || "Not provided" }
+  ];
+  if (profile.facebookUrl) {
+    evidence.push({ field: "Facebook page", text: profile.facebookUrl });
+  }
+
+  return {
+    id: user.facilityId || `hospital-${user.id}`,
+    name: profile.name || getDisplayName(user),
+    type: "Hospital profile",
+    city: profile.streetAddress || "Local profile",
+    state: "",
+    distanceKm: 0,
+    tier: "partial",
+    score: 2,
+    lat: 23.0225,
+    lng: 72.5714,
+    phone: profile.phone,
+    email: user.email,
+    facebookUrl: profile.facebookUrl,
+    addressLine: profile.streetAddress,
+    match: "Hospital-entered account profile",
+    evidence,
+    flags: ["Self-reported hospital profile"],
+    map: { x: 50, y: 50 }
+  };
+}
+
+function createDoctorProfile(userId, rawText) {
+  return {
+    doctorId: userId,
+    rawText,
+    tags: extractLocalTags(rawText),
+    createdAt: new Date().toISOString()
+  };
+}
+
+function useProfileRecorder(setText) {
   const [recording, setRecording] = useState(false);
   const [status, setStatus] = useState("idle");
   const [error, setError] = useState("");
@@ -272,12 +279,523 @@ function Onboarding({ onComplete }) {
       setText((current) => mergeTranscript(current, transcript));
       setStatus("ready");
     } catch {
-      const demoTranscript =
-        "I am a cardiologist with 10 years of ICU experience. I can support emergency cardiac referrals, hypertension care, and volunteer cardiac screening camps in Gujarat and Rajasthan.";
-      setText((current) => mergeTranscript(current, demoTranscript));
+      setText((current) => mergeTranscript(current, DEMO_PROFILE_TRANSCRIPT));
       setStatus("demo");
     }
   }
+
+  return { recording, status, error, startRecording, stopRecording };
+}
+
+function App() {
+  const [users, setUsers] = useState(() => readJson(USER_DATABASE_KEY, []));
+  const [sessionUserId, setSessionUserId] = useState(() => localStorage.getItem(SESSION_USER_KEY) || "");
+  const activeUser = users.find((user) => user.id === sessionUserId) || null;
+  const [requests, setRequests] = useState(() => readJson(SCHEDULE_REQUESTS_KEY, []));
+
+  function persistUsers(nextUsers) {
+    saveJson(USER_DATABASE_KEY, nextUsers);
+    setUsers(nextUsers);
+  }
+
+  function persistRequests(nextRequests) {
+    saveJson(SCHEDULE_REQUESTS_KEY, nextRequests);
+    setRequests(nextRequests);
+  }
+
+  function signUp({ name, email, password, role, profileText, hospitalStreetAddress, hospitalPhone, hospitalFacebookUrl }) {
+    const normalizedEmail = normalizeEmail(email);
+    if (users.some((user) => user.email === normalizedEmail)) {
+      return { ok: false, message: "An account already exists for that email." };
+    }
+    const userId = crypto.randomUUID();
+    const trimmedProfileText = profileText?.trim() || "";
+    const hospitalProfile =
+      role === "hospital"
+        ? {
+            name: name.trim(),
+            streetAddress: hospitalStreetAddress.trim(),
+            phone: hospitalPhone.trim(),
+            facebookUrl: normalizeOptionalUrl(hospitalFacebookUrl)
+          }
+        : null;
+    const user = {
+      id: userId,
+      name: name.trim(),
+      email: normalizedEmail,
+      password,
+      role,
+      facilityId: role === "hospital" ? `hospital-${userId}` : "",
+      ...(hospitalProfile ? { hospitalProfile } : {}),
+      createdAt: new Date().toISOString()
+    };
+    persistUsers([...users, user]);
+    if (role === "doctor" && trimmedProfileText) {
+      saveJson(getProfileKey(user.id), createDoctorProfile(user.id, trimmedProfileText));
+    }
+    localStorage.setItem(SESSION_USER_KEY, user.id);
+    setSessionUserId(user.id);
+    return { ok: true };
+  }
+
+  function login({ email, password }) {
+    const normalizedEmail = normalizeEmail(email);
+    const user = users.find((item) => item.email === normalizedEmail && item.password === password);
+    if (!user) {
+      return { ok: false, message: "Email or password did not match a local account." };
+    }
+    localStorage.setItem(SESSION_USER_KEY, user.id);
+    setSessionUserId(user.id);
+    return { ok: true };
+  }
+
+  function logout() {
+    localStorage.removeItem(SESSION_USER_KEY);
+    setSessionUserId("");
+  }
+
+  function updateRequestStatus(requestId, status) {
+    persistRequests(
+      requests.map((request) =>
+        request.id === requestId
+          ? { ...request, status, reviewedAt: new Date().toISOString(), reviewedBy: activeUser?.id || "" }
+          : request
+      )
+    );
+  }
+
+  function createScheduleRequest(entry) {
+    const facility = facilities.find((item) => item.id === entry.facilityId);
+    const request = {
+      id: crypto.randomUUID(),
+      direction: "doctor_to_hospital",
+      doctorId: activeUser.id,
+      doctorName: getDisplayName(activeUser),
+      doctorEmail: activeUser.email,
+      facilityId: entry.facilityId,
+      facilityName: facility?.name || "Unknown facility",
+      visitDate: entry.date,
+      visitTime: entry.time,
+      purpose: entry.purpose,
+      status: "pending",
+      createdAt: new Date().toISOString()
+    };
+    persistRequests([request, ...requests]);
+    return request;
+  }
+
+  function createHospitalDoctorRequest({ doctorId, date, time, purpose }) {
+    const doctor = users.find((item) => item.id === doctorId);
+    const facility = getHospitalFacility(activeUser);
+    if (!doctor || !facility) {
+      return { ok: false, message: "Select a doctor before sending the request." };
+    }
+    const request = {
+      id: crypto.randomUUID(),
+      direction: "hospital_to_doctor",
+      requestedBy: activeUser.id,
+      requestedByName: getDisplayName(activeUser),
+      doctorId: doctor.id,
+      doctorName: getDisplayName(doctor),
+      doctorEmail: doctor.email,
+      facilityId: facility.id,
+      facilityName: facility.name,
+      visitDate: date,
+      visitTime: time,
+      purpose,
+      status: "pending",
+      createdAt: new Date().toISOString()
+    };
+    persistRequests([request, ...requests]);
+    return { ok: true, request };
+  }
+
+  if (!activeUser) {
+    return <AuthGate onLogin={login} onSignUp={signUp} />;
+  }
+
+  if (activeUser.role === "hospital") {
+    return (
+      <HospitalDashboard
+        user={activeUser}
+        doctors={users.filter((user) => user.role === "doctor")}
+        requests={requests}
+        onCreateDoctorRequest={createHospitalDoctorRequest}
+        onUpdateRequestStatus={updateRequestStatus}
+        onLogout={logout}
+      />
+    );
+  }
+
+  return (
+    <DoctorApp
+      user={activeUser}
+      requests={requests}
+      onCreateScheduleRequest={createScheduleRequest}
+      onUpdateRequestStatus={updateRequestStatus}
+      onLogout={logout}
+    />
+  );
+}
+
+function DoctorApp({ user, requests, onCreateScheduleRequest, onUpdateRequestStatus, onLogout }) {
+  const profileKey = getProfileKey(user.id);
+  const [profile, setProfile] = useState(() => {
+    const saved = localStorage.getItem(profileKey);
+    return saved ? JSON.parse(saved) : null;
+  });
+  const [activeView, setActiveView] = useState("search");
+  const [selectedFacilityId, setSelectedFacilityId] = useState(facilities[0].id);
+  const [shortlist, setShortlist] = useState([facilities[0].id]);
+  const [schedule, setSchedule] = useState([
+    {
+      id: "visit-1",
+      facilityId: facilities[0].id,
+      date: "2026-06-16",
+      time: "10:30",
+      purpose: "Cardiology referral discussion"
+    }
+  ]);
+
+  const selectedFacility = facilities.find((facility) => facility.id === selectedFacilityId) || facilities[0];
+
+  function saveProfile(rawText) {
+    const nextProfile = createDoctorProfile(user.id, rawText);
+    saveJson(profileKey, nextProfile);
+    setProfile(nextProfile);
+  }
+
+  function resetProfile() {
+    localStorage.removeItem(profileKey);
+    setProfile(null);
+  }
+
+  function toggleShortlist(id) {
+    setShortlist((current) =>
+      current.includes(id) ? current.filter((item) => item !== id) : [...current, id]
+    );
+  }
+
+  function addSchedule(entry) {
+    const request = onCreateScheduleRequest(entry);
+    setSchedule((current) => [{ id: crypto.randomUUID(), requestId: request.id, ...entry }, ...current]);
+    setActiveView("schedule");
+    return request;
+  }
+
+  function acceptHospitalRequest(request) {
+    onUpdateRequestStatus(request.id, "approved");
+    setSchedule((current) => {
+      if (current.some((entry) => entry.requestId === request.id)) return current;
+      return [
+        {
+          id: crypto.randomUUID(),
+          requestId: request.id,
+          facilityId: request.facilityId,
+          facilityName: request.facilityName,
+          date: request.visitDate,
+          time: request.visitTime,
+          purpose: request.purpose
+        },
+        ...current
+      ];
+    });
+    setActiveView("schedule");
+  }
+
+  function denyHospitalRequest(request) {
+    onUpdateRequestStatus(request.id, "denied");
+    setActiveView("schedule");
+  }
+
+  function removeSchedule(id) {
+    setSchedule((current) => current.filter((entry) => entry.id !== id));
+  }
+
+  if (!profile) {
+    return <Onboarding onComplete={saveProfile} />;
+  }
+
+  return (
+    <div className="appShell">
+      <TopBar
+        activeView={activeView}
+        setActiveView={setActiveView}
+        shortlistCount={shortlist.length}
+        profile={profile}
+        onResetProfile={resetProfile}
+        user={user}
+        onLogout={onLogout}
+      />
+      <main className="workspace">
+        <LeftPanel
+          activeView={activeView}
+          setActiveView={setActiveView}
+          facilities={facilities}
+          selectedFacilityId={selectedFacilityId}
+          setSelectedFacilityId={setSelectedFacilityId}
+          shortlist={shortlist}
+          toggleShortlist={toggleShortlist}
+          schedule={schedule}
+          addSchedule={addSchedule}
+          removeSchedule={removeSchedule}
+          profile={profile}
+          requests={requests.filter((request) => request.doctorId === user.id)}
+          incomingHospitalRequests={requests.filter(
+            (request) => request.doctorId === user.id && getRequestDirection(request) === "hospital_to_doctor"
+          )}
+          onAcceptHospitalRequest={acceptHospitalRequest}
+          onDenyHospitalRequest={denyHospitalRequest}
+        />
+        <MapWorkspace
+          activeView={activeView}
+          facilities={facilities}
+          selectedFacility={selectedFacility}
+          setSelectedFacilityId={setSelectedFacilityId}
+          shortlist={shortlist}
+          toggleShortlist={toggleShortlist}
+          schedule={schedule}
+          addSchedule={addSchedule}
+        />
+      </main>
+    </div>
+  );
+}
+
+function AuthGate({ onLogin, onSignUp }) {
+  const [mode, setMode] = useState("signup");
+  const [role, setRole] = useState("doctor");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [profileText, setProfileText] = useState("");
+  const [hospitalStreetAddress, setHospitalStreetAddress] = useState("");
+  const [hospitalPhone, setHospitalPhone] = useState("");
+  const [hospitalFacebookUrl, setHospitalFacebookUrl] = useState("");
+  const [error, setError] = useState("");
+  const {
+    recording: profileRecording,
+    status: profileStatus,
+    error: profileError,
+    startRecording: startProfileRecording,
+    stopRecording: stopProfileRecording
+  } = useProfileRecorder(setProfileText);
+
+  function submit(event) {
+    event.preventDefault();
+    setError("");
+    const result =
+      mode === "login"
+        ? onLogin({ email, password })
+        : onSignUp({
+            name,
+            email,
+            password,
+            role,
+            profileText,
+            hospitalStreetAddress,
+            hospitalPhone,
+            hospitalFacebookUrl
+          });
+    if (!result.ok) {
+      setError(result.message);
+    }
+  }
+
+  const doctorProfileReady = role !== "doctor" || profileText.trim().length > 20;
+  const hospitalProfileReady =
+    role !== "hospital" || (hospitalStreetAddress.trim().length > 5 && hospitalPhone.trim().length > 6);
+  const canSubmit =
+    mode === "login"
+      ? email.trim() && password
+      : name.trim().length > 1 &&
+        email.trim() &&
+        password.length >= 4 &&
+        doctorProfileReady &&
+        hospitalProfileReady;
+
+  return (
+    <main className="authShell">
+      <section className="authPanel">
+        <div className="authIntro">
+          <div className="brandLockup">
+            <span className="brandMark">
+              <HeartPulse size={25} />
+            </span>
+            <div>
+              <h1>Referral Copilot</h1>
+              <p>Role-based access</p>
+            </div>
+          </div>
+          <div>
+            <p className="eyebrow">Sign in</p>
+            <h2>One workspace for referrals, two views for the handoff.</h2>
+            <p>
+              Doctors create their referral context during sign-up, then search, shortlist, and request
+              visits. Hospitals review requests and can invite doctors from the local user table.
+            </p>
+          </div>
+          <div className="roleSummary">
+            <div>
+              <UserRound size={18} />
+              <strong>Doctor</strong>
+              <span>Referral chat, map, shortlist, schedule builder.</span>
+            </div>
+            <div>
+              <Hospital size={18} />
+              <strong>Hospital</strong>
+              <span>Request queue with approve and deny actions.</span>
+            </div>
+          </div>
+        </div>
+        <form className="authForm" onSubmit={submit}>
+          <div className="modeSwitch" aria-label="Authentication mode">
+            <button
+              type="button"
+              className={mode === "signup" ? "active" : ""}
+              onClick={() => setMode("signup")}
+            >
+              <UserPlus size={16} />
+              Sign up
+            </button>
+            <button
+              type="button"
+              className={mode === "login" ? "active" : ""}
+              onClick={() => setMode("login")}
+            >
+              <UserRound size={16} />
+              Log in
+            </button>
+          </div>
+          {mode === "signup" && (
+            <>
+              <label>
+                Account type
+                <div className="roleToggle">
+                  <button
+                    type="button"
+                    className={role === "doctor" ? "active" : ""}
+                    onClick={() => setRole("doctor")}
+                  >
+                    <UserRound size={16} />
+                    Doctor
+                  </button>
+                  <button
+                    type="button"
+                    className={role === "hospital" ? "active" : ""}
+                    onClick={() => setRole("hospital")}
+                  >
+                    <Hospital size={16} />
+                    Hospital
+                  </button>
+                </div>
+              </label>
+              <label>
+                {role === "hospital" ? "Hospital name" : "Name"}
+                <input
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                  placeholder={role === "hospital" ? "Shaurya Heart & Critical Care" : "Dr. Anika Rao"}
+                />
+              </label>
+            </>
+          )}
+          <label>
+            Email
+            <input
+              type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder="doctor@example.com"
+            />
+          </label>
+          <label>
+            Password
+            <input
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              placeholder="Prototype password"
+            />
+          </label>
+          {mode === "signup" && role === "doctor" && (
+            <div className="doctorContextInline">
+              <div className="contextLabelRow">
+                <span>Doctor context</span>
+                <span>{doctorProfileReady ? "Ready" : "Required"}</span>
+              </div>
+              <div className="textareaFrame">
+                <textarea
+                  aria-label="Doctor context"
+                  value={profileText}
+                  onChange={(event) => setProfileText(event.target.value)}
+                  placeholder="I am a cardiologist with ICU experience. I usually refer patients for cardiac emergencies, prefer Gujarat and Rajasthan, and can volunteer for rural screening camps..."
+                />
+                <div className="transcriptionDock">
+                  <button
+                    type="button"
+                    className={`iconTextButton ${profileRecording ? "dangerButton" : ""}`}
+                    onClick={profileRecording ? stopProfileRecording : startProfileRecording}
+                  >
+                    {profileRecording ? <Square size={17} /> : <Mic size={17} />}
+                    {profileRecording ? "Stop" : "Speak"}
+                  </button>
+                  <StatusPill status={profileStatus} />
+                </div>
+              </div>
+              {profileError && <p className="formError">{profileError}</p>}
+              <button type="button" className="ghostButton sampleContextButton" onClick={() => setProfileText(SAMPLE_PROFILE_TEXT)}>
+                <FileText size={16} />
+                Use sample context
+              </button>
+            </div>
+          )}
+          {mode === "signup" && role === "hospital" && (
+            <div className="hospitalProfileFields">
+              <label>
+                Street address
+                <input
+                  value={hospitalStreetAddress}
+                  onChange={(event) => setHospitalStreetAddress(event.target.value)}
+                  placeholder="15 Civil Hospital Road, Ahmedabad, Gujarat"
+                />
+              </label>
+              <label>
+                Phone number
+                <input
+                  type="tel"
+                  value={hospitalPhone}
+                  onChange={(event) => setHospitalPhone(event.target.value)}
+                  placeholder="+91 98251 47300"
+                />
+              </label>
+              <label>
+                Facebook page
+                <input
+                  value={hospitalFacebookUrl}
+                  onChange={(event) => setHospitalFacebookUrl(event.target.value)}
+                  placeholder="facebook.com/your-hospital"
+                />
+              </label>
+            </div>
+          )}
+          {error && <p className="formError">{error}</p>}
+          <button type="submit" className="primaryButton" disabled={!canSubmit}>
+            {mode === "login" ? "Log in" : "Create account"}
+            <ChevronRight size={18} />
+          </button>
+          <p className="authFootnote">
+            Prototype accounts are stored in this browser only. Backend user storage is the next step.
+          </p>
+        </form>
+      </section>
+    </main>
+  );
+}
+
+function Onboarding({ onComplete }) {
+  const [text, setText] = useState("");
+  const { recording, status, error, startRecording, stopRecording } = useProfileRecorder(setText);
 
   const canSubmit = text.trim().length > 20;
 
@@ -356,9 +874,7 @@ function Onboarding({ onComplete }) {
                 type="button"
                 className="ghostButton"
                 onClick={() =>
-                  setText(
-                    "I am a general physician with eight years of experience in diabetes and hypertension care. I can volunteer monthly for rural screening camps and prefer facilities in Gujarat, Rajasthan, and Maharashtra."
-                  )
+                  setText(SAMPLE_PROFILE_TEXT)
                 }
               >
                 <FileText size={17} />
@@ -388,7 +904,7 @@ function StatusPill({ status }) {
   return <span className={`statusPill status-${status}`}>{copy}</span>;
 }
 
-function TopBar({ activeView, setActiveView, shortlistCount, profile, onResetProfile }) {
+function TopBar({ activeView, setActiveView, shortlistCount, profile, onResetProfile, user, onLogout }) {
   const tabs = [
     { id: "search", label: "Search", icon: Search },
     { id: "schedule", label: "Schedule", icon: CalendarDays },
@@ -421,11 +937,17 @@ function TopBar({ activeView, setActiveView, shortlistCount, profile, onResetPro
           );
         })}
       </nav>
-      <div className="profileChip">
-        <UserRound size={17} />
-        <span>{profile.tags.specialties[0] || "Doctor"}</span>
-        <button title="Reset profile" onClick={onResetProfile}>
-          <X size={14} />
+      <div className="accountCluster">
+        <div className="profileChip">
+          <UserRound size={17} />
+          <span>{getDisplayName(user)} · {profile.tags.specialties[0] || "Doctor"}</span>
+          <button title="Reset profile" onClick={onResetProfile}>
+            <X size={14} />
+          </button>
+        </div>
+        <button className="logoutButton" onClick={onLogout}>
+          <LogOut size={16} />
+          Log out
         </button>
       </div>
     </header>
@@ -798,11 +1320,293 @@ function EvidenceDrawer({ facility, shortlisted, onToggleShortlist, onSchedule }
   );
 }
 
-function SchedulePanel({ facilities, schedule, addSchedule, removeSchedule }) {
+function HospitalDashboard({ user, doctors, requests, onCreateDoctorRequest, onUpdateRequestStatus, onLogout }) {
+  const facility = getHospitalFacility(user);
+  const facilityRequests = requests.filter((request) => request.facilityId === facility.id);
+  const incomingRequests = facilityRequests.filter((request) => getRequestDirection(request) === "doctor_to_hospital");
+  const outgoingRequests = facilityRequests.filter((request) => getRequestDirection(request) === "hospital_to_doctor");
+  const pendingRequests = incomingRequests.filter((request) => request.status === "pending");
+  const approvedRequests = incomingRequests.filter((request) => request.status === "approved");
+  const deniedRequests = incomingRequests.filter((request) => request.status === "denied");
+  const meta = tierMeta[facility.tier];
+
+  return (
+    <div className="hospitalShell">
+      <header className="topBar hospitalTopBar">
+        <div className="brandLockup compact">
+          <span className="brandMark">
+            <Hospital size={22} />
+          </span>
+          <div>
+            <h1>Hospital Portal</h1>
+            <p>{facility.name}</p>
+          </div>
+        </div>
+        <div className="hospitalIdentity">
+          <span className={`tierBadge ${meta.className}`}>{meta.label} evidence</span>
+          <span>{getDisplayName(user)}</span>
+        </div>
+        <button className="logoutButton" onClick={onLogout}>
+          <LogOut size={16} />
+          Log out
+        </button>
+      </header>
+      <main className="hospitalWorkspace">
+        <section className="requestPanel">
+          <div className="panelHeader">
+            <div>
+              <p className="eyebrow">Scheduling</p>
+              <h2>Requests</h2>
+            </div>
+            <span className="countBadge">{pendingRequests.length} pending</span>
+          </div>
+          <div className="requestStats">
+            <div>
+              <span>Needs review</span>
+              <strong>{pendingRequests.length}</strong>
+            </div>
+            <div>
+              <span>Approved visits</span>
+              <strong>{approvedRequests.length}</strong>
+            </div>
+            <div>
+              <span>Doctor invites</span>
+              <strong>{outgoingRequests.filter((request) => request.status === "pending").length}</strong>
+            </div>
+          </div>
+          <HospitalDoctorRequestForm doctors={doctors} onCreateDoctorRequest={onCreateDoctorRequest} />
+          <div className="requestSectionHeader">
+            <h3>Incoming from doctors</h3>
+            <span>{incomingRequests.length} total</span>
+          </div>
+          <div className="requestQueue">
+            {incomingRequests.length ? (
+              incomingRequests.map((request) => (
+                <ScheduleRequestCard
+                  key={request.id}
+                  request={request}
+                  title={request.doctorName}
+                  subtitle={request.doctorEmail}
+                  onApprove={() => onUpdateRequestStatus(request.id, "approved")}
+                  onDeny={() => onUpdateRequestStatus(request.id, "denied")}
+                />
+              ))
+            ) : (
+              <div className="emptyState">
+                <ClipboardList size={28} />
+                <h3>No scheduling requests</h3>
+                <p>Incoming doctor requests for {facility.name} will appear here.</p>
+              </div>
+            )}
+          </div>
+          <div className="requestSectionHeader">
+            <h3>Requests sent to doctors</h3>
+            <span>{outgoingRequests.length} total</span>
+          </div>
+          <div className="requestQueue">
+            {outgoingRequests.length ? (
+              outgoingRequests.map((request) => (
+                <ScheduleRequestCard
+                  key={request.id}
+                  request={request}
+                  title={request.doctorName}
+                  subtitle={`${request.doctorEmail} · doctor decision`}
+                />
+              ))
+            ) : (
+              <div className="emptyState compactEmpty">
+                <UserRound size={24} />
+                <h3>No doctor invites sent</h3>
+                <p>Use the request form above to ask a doctor to visit {facility.name}.</p>
+              </div>
+            )}
+          </div>
+        </section>
+        <aside className="hospitalFacilityPane">
+          <div className="facilityHero">
+            <span className={`tierDot ${meta.className}`} />
+            <div>
+              <h2>{facility.name}</h2>
+              <p>
+                {facility.type}
+                {facility.addressLine ? ` · ${facility.addressLine}` : ` · ${facility.city}, ${facility.state}`}
+              </p>
+            </div>
+          </div>
+          <div className="contactGrid">
+            {facility.phone ? (
+              <a href={`tel:${facility.phone}`}>
+                <Phone size={15} />
+                {facility.phone}
+              </a>
+            ) : (
+              <span>
+                <Phone size={15} />
+                No phone listed
+              </span>
+            )}
+            {facility.email ? (
+              <a href={`mailto:${facility.email}`}>
+                <Mail size={15} />
+                {facility.email}
+              </a>
+            ) : (
+              <span>
+                <Mail size={15} />
+                No email listed
+              </span>
+            )}
+            {facility.facebookUrl && (
+              <a href={facility.facebookUrl} target="_blank" rel="noreferrer">
+                <ExternalLink size={15} />
+                Facebook page
+              </a>
+            )}
+          </div>
+          <div className="evidenceList">
+            {facility.evidence.map((item) => (
+              <div key={`${facility.id}-${item.field}`}>
+                <span>{item.field}</span>
+                <p>{item.text}</p>
+              </div>
+            ))}
+          </div>
+          <div className="flagList">
+            {facility.flags.map((flag) => (
+              <span key={flag}>{flag}</span>
+            ))}
+          </div>
+        </aside>
+      </main>
+    </div>
+  );
+}
+
+function HospitalDoctorRequestForm({ doctors, onCreateDoctorRequest }) {
+  const [doctorId, setDoctorId] = useState(doctors[0]?.id || "");
+  const [date, setDate] = useState("2026-06-18");
+  const [time, setTime] = useState("11:00");
+  const [purpose, setPurpose] = useState("Volunteer specialist visit");
+  const [notice, setNotice] = useState("");
+
+  useEffect(() => {
+    if (!doctorId && doctors[0]?.id) {
+      setDoctorId(doctors[0].id);
+    }
+  }, [doctorId, doctors]);
+
+  return (
+    <form
+      className="doctorRequestForm"
+      onSubmit={(event) => {
+        event.preventDefault();
+        const result = onCreateDoctorRequest({ doctorId, date, time, purpose });
+        setNotice(result.ok ? "Request sent to doctor." : result.message);
+      }}
+    >
+      <div className="requestSectionHeader inlineHeader">
+        <h3>Request a doctor</h3>
+        <span>{doctors.length} available</span>
+      </div>
+      <label>
+        Doctor
+        <select value={doctorId} onChange={(event) => setDoctorId(event.target.value)} disabled={!doctors.length}>
+          {doctors.length ? (
+            doctors.map((doctor) => (
+              <option key={doctor.id} value={doctor.id}>
+                {getDisplayName(doctor)}
+              </option>
+            ))
+          ) : (
+            <option>No doctor accounts yet</option>
+          )}
+        </select>
+      </label>
+      <div className="formSplit">
+        <label>
+          Date
+          <input type="date" value={date} onChange={(event) => setDate(event.target.value)} />
+        </label>
+        <label>
+          Time
+          <input type="time" value={time} onChange={(event) => setTime(event.target.value)} />
+        </label>
+      </div>
+      <label>
+        Purpose
+        <input value={purpose} onChange={(event) => setPurpose(event.target.value)} />
+      </label>
+      <button className="primaryButton" type="submit" disabled={!doctors.length || !doctorId}>
+        <Send size={16} />
+        Send request
+      </button>
+      {notice && <p className="requestNotice">{notice}</p>}
+    </form>
+  );
+}
+
+function ScheduleRequestCard({
+  request,
+  onApprove,
+  onDeny,
+  title = request.doctorName,
+  subtitle = request.doctorEmail,
+  approveLabel = "Approve",
+  denyLabel = "Deny"
+}) {
+  const meta = requestStatusMeta[request.status] || requestStatusMeta.pending;
+
+  return (
+    <article className="requestCard">
+      <div className="requestHeader">
+        <div>
+          <h3>{title}</h3>
+          <p>{subtitle}</p>
+        </div>
+        <span className={`requestStatus ${meta.className}`}>{meta.label}</span>
+      </div>
+      <div className="requestDetails">
+        <span>
+          <CalendarDays size={15} />
+          {request.visitDate}
+        </span>
+        <span>
+          <Clock3 size={15} />
+          {request.visitTime}
+        </span>
+      </div>
+      <p className="requestPurpose">{request.purpose}</p>
+      {request.status === "pending" && onApprove && onDeny && (
+        <div className="requestActions">
+          <button className="approveButton" onClick={onApprove}>
+            <Check size={16} />
+            {approveLabel}
+          </button>
+          <button className="denyButton" onClick={onDeny}>
+            <X size={16} />
+            {denyLabel}
+          </button>
+        </div>
+      )}
+    </article>
+  );
+}
+
+function SchedulePanel({
+  facilities,
+  schedule,
+  addSchedule,
+  removeSchedule,
+  requests = [],
+  incomingHospitalRequests = [],
+  onAcceptHospitalRequest,
+  onDenyHospitalRequest
+}) {
   const [facilityId, setFacilityId] = useState(facilities[0].id);
   const [date, setDate] = useState("2026-06-17");
   const [time, setTime] = useState("09:30");
   const [purpose, setPurpose] = useState("Volunteer screening camp");
+  const pendingHospitalRequests = incomingHospitalRequests.filter((request) => request.status === "pending");
 
   return (
     <aside className="sidePanel schedulePanel">
@@ -813,6 +1617,32 @@ function SchedulePanel({ facilities, schedule, addSchedule, removeSchedule }) {
         </div>
         <span className="countBadge">{schedule.length} planned</span>
       </div>
+      <section className="incomingRequestList">
+        <div className="requestSectionHeader">
+          <h3>Hospital requests</h3>
+          <span>{pendingHospitalRequests.length} pending</span>
+        </div>
+        {incomingHospitalRequests.length ? (
+          incomingHospitalRequests.map((request) => (
+            <ScheduleRequestCard
+              key={request.id}
+              request={request}
+              title={request.facilityName}
+              subtitle={`Requested by ${request.requestedByName || request.facilityName}`}
+              approveLabel="Accept"
+              denyLabel="Decline"
+              onApprove={() => onAcceptHospitalRequest(request)}
+              onDeny={() => onDenyHospitalRequest(request)}
+            />
+          ))
+        ) : (
+          <div className="emptyState compactEmpty">
+            <Hospital size={24} />
+            <h3>No hospital requests</h3>
+            <p>When a hospital requests your time, you can accept it into this schedule.</p>
+          </div>
+        )}
+      </section>
       <form
         className="builderForm"
         onSubmit={(event) => {
@@ -852,13 +1682,17 @@ function SchedulePanel({ facilities, schedule, addSchedule, removeSchedule }) {
       <div className="plannedList">
         {schedule.map((entry) => {
           const facility = facilities.find((item) => item.id === entry.facilityId);
+          const request = requests.find((item) => item.id === entry.requestId);
+          const meta = requestStatusMeta[request?.status || "planned"];
+          const facilityName = facility?.name || request?.facilityName || entry.facilityName || "Hospital visit";
           return (
             <div className="plannedItem" key={entry.id}>
               <div>
-                <h3>{facility?.name}</h3>
+                <h3>{facilityName}</h3>
                 <p>
                   {entry.date} · {entry.time}
                 </p>
+                <span className={`requestStatus ${meta.className}`}>{meta.label}</span>
                 <span>{entry.purpose}</span>
               </div>
               <button title="Remove visit" onClick={() => removeSchedule(entry.id)}>
@@ -884,13 +1718,14 @@ function ScheduleRibbon({ schedule, facilities }) {
             {entries.length ? (
               entries.map((entry) => {
                 const facility = facilities.find((item) => item.id === entry.facilityId);
+                const facilityName = facility?.name || entry.facilityName || "Hospital visit";
                 return (
                   <div className="visitBlock" key={entry.id}>
                     <span>
                       <Clock3 size={13} />
                       {entry.time}
                     </span>
-                    <strong>{facility?.name}</strong>
+                    <strong>{facilityName}</strong>
                     <p>{entry.purpose}</p>
                   </div>
                 );

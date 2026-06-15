@@ -23,8 +23,12 @@ A referring physician needs to find facilities where they can send a patient —
 Three runtime layers:
 
 ### Frontend — React SPA
-- Split-pane layout: chat panel (left) + Google Maps panel (right)
-- Three tabs: **Search**, **Schedule**, **Shortlist**
+- Role-based entry: doctor view and hospital view
+- Doctor sign-up includes the practice context textarea and voice transcription control
+- Hospital sign-up collects hospital name, street address, phone number, and optional Facebook page
+- Doctor split-pane layout: chat panel (left) + Google Maps panel (right)
+- Doctor tabs: **Search**, **Schedule**, **Shortlist**
+- Hospital portal: facility-specific two-way scheduling queue with approve/deny decisions and doctor requests
 - Communicates with backend via REST API
 - Audio recording via browser `MediaRecorder` API
 
@@ -39,18 +43,20 @@ Three source tables (read-only):
 - `databricks_virtue_foundation_dataset_dais_2026.virtue_foundation_dataset.india_post_pincode_directory`
 - `databricks_virtue_foundation_dataset_dais_2026.virtue_foundation_dataset.nfhs_5_district_health_indicators`
 
-Three app-owned tables (read/write):
+App-owned tables (read/write):
+- `users` — user_id, email, role, display_name, password_hash, facility_id, hospital_name, hospital_street_address, hospital_phone, hospital_facebook_url, created_at
 - `doctor_profiles` — doctor_id, raw_text, extracted_tags (JSON), created_at
 - `referral_shortlist` — doctor_id, facility_id, added_at
-- `volunteering_schedule` — doctor_id, facility_id, visit_date, notes
+- `volunteering_schedule` — doctor_id, facility_id, visit_date, notes, status
+- `scheduling_requests` — request_id, direction, requested_by, doctor_id, facility_id, visit_date, notes, status, reviewed_by, reviewed_at
 
-**Doctor identity:** No auth system. On first visit the frontend generates a UUID v4, stores it in `localStorage`, and sends it as `X-Doctor-ID` header on every request. The backend uses this as `doctor_id` for all persistence operations.
+**Identity:** The app has two user roles: `doctor` and `hospital`. Doctors use the referral workspace. Hospital users create a hospital profile during sign-up, review incoming doctor-to-hospital scheduling requests for their hospital profile, and can send hospital-to-doctor requests from the user table. The current frontend prototype stores local accounts and request state in `localStorage`; the backend version should replace that with a real user database, password hashing, session management, and role authorization.
 
 ---
 
 ## 3. Onboarding Flow
 
-Shown on first visit (no stored profile). Doctor describes their specialties, experience, and interests.
+Shown during doctor sign-up, with the same screen available as a fallback when a local doctor account has no stored profile. Doctor describes their specialties, experience, and interests.
 
 **Input options:**
 1. **Text** — free-form textarea, no length limit
@@ -162,7 +168,7 @@ District resolution: facility `address_zipOrPostcode` → pincode directory `dis
 - NFHS district health indicators
 
 ### Schedule Tab
-List of facilities with planned visit dates. Add from shortlist. Each entry shows facility name, specialty match, contact number.
+List of facilities with planned visit dates. Add from shortlist or from the schedule builder. Each entry shows facility name, requested date, time, purpose, and request status when tied to a scheduling request. Hospital-originated requests appear above the builder with accept/decline actions; accepted requests are inserted into the doctor's schedule.
 
 ### Shortlist Tab
 Saved facilities. Each shows distance, trust tier, contact info, and a "Generate Email" button.
@@ -186,6 +192,9 @@ Response shown in a modal with **Copy**, **Edit**, and **Open in Mail** (`mailto
 
 | Method | Path | Description |
 |---|---|---|
+| `POST` | `/auth/signup` | Create a doctor or hospital user, including doctor context or hospital profile fields when applicable |
+| `POST` | `/auth/login` | Authenticate user and create session |
+| `POST` | `/auth/logout` | End session |
 | `POST` | `/transcribe` | Audio blob → OpenAI Whisper → transcript string |
 | `POST` | `/onboard` | Save doctor profile, extract tags via LLM |
 | `GET` | `/profile` | Return stored doctor profile |
@@ -197,6 +206,12 @@ Response shown in a modal with **Copy**, **Edit**, and **Open in Mail** (`mailto
 | `POST` | `/schedule` | Save a visit entry |
 | `GET` | `/schedule` | Return doctor's schedule |
 | `DELETE` | `/schedule/{id}` | Remove a schedule entry |
+| `GET` | `/hospital/requests` | Return scheduling requests for the logged-in hospital's facility |
+| `PATCH` | `/hospital/requests/{id}` | Approve or deny a scheduling request |
+| `GET` | `/hospital/doctors` | Return doctors available for hospital-originated requests |
+| `POST` | `/hospital/doctor-requests` | Create a hospital-to-doctor scheduling request |
+| `GET` | `/doctor/requests` | Return scheduling requests for the logged-in doctor |
+| `PATCH` | `/doctor/requests/{id}` | Accept or decline a hospital-originated request |
 | `POST` | `/generate-email` | Draft intro email from profile + facility |
 
 ---
