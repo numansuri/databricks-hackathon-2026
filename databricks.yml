@@ -1,0 +1,31 @@
+bundle:
+  name: referral_copilot
+
+resources:
+  apps:
+    referral_copilot:
+      name: referral-copilot
+      source_code_path: .
+      description: Shiftlink doctor and hospital scheduling exchange prototype.
+      resources:
+        - name: google_maps_api_key
+          description: Google Maps JavaScript API key for the map workspace.
+          secret:
+            scope: referral-copilot
+            key: google-maps-api-key
+            permission: READ
+      config:
+        command:
+          - npm
+          - run
+          - start
+        env:
+          - name: VITE_GOOGLE_MAPS_API_KEY
+            value_from: google_maps_api_key
+
+targets:
+  dev:
+    mode: development
+    default: true
+    workspace:
+      host: https://dbc-87f85fc5-dc00.cloud.databricks.com

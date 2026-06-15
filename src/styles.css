@@ -6,17 +6,51 @@
   --ink: #17201c;
   --muted: #66736d;
   --line: #dbe3df;
+  --page: #edf3f2;
   --soft: #f4f7f5;
   --surface: #ffffff;
+  --surfaceElevated: #ffffff;
   --surfaceWarm: #fff9ef;
   --mint: #1f8a68;
   --mintSoft: #dff4eb;
+  --exchange: #2c7f8e;
+  --exchangeSoft: #e2f3f5;
   --amber: #b7791f;
   --amberSoft: #fff1cc;
   --coral: #c94f3d;
   --coralSoft: #ffe2dc;
   --indigo: #4355a1;
   --shadow: 0 18px 50px rgba(23, 32, 28, 0.12);
+  --shadowLift: 0 16px 44px rgba(21, 29, 31, 0.12);
+  --mapGrid: rgba(31, 60, 64, 0.12);
+  --mapRoad: rgba(255, 255, 255, 0.72);
+  --mapWater: #a8d4da;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --ink: #f2fbfb;
+  --muted: #a6b8bd;
+  --line: rgba(227, 244, 246, 0.14);
+  --page: #0d1417;
+  --soft: #111a1e;
+  --surface: #151f23;
+  --surfaceElevated: #1c292e;
+  --surfaceWarm: #141d1c;
+  --mint: #55c69b;
+  --mintSoft: rgba(85, 198, 155, 0.14);
+  --exchange: #55c7d3;
+  --exchangeSoft: rgba(85, 199, 211, 0.16);
+  --amber: #e4a64c;
+  --amberSoft: rgba(228, 166, 76, 0.15);
+  --coral: #ff7868;
+  --coralSoft: rgba(255, 120, 104, 0.15);
+  --indigo: #a89df1;
+  --shadow: 0 24px 70px rgba(0, 0, 0, 0.36);
+  --shadowLift: 0 18px 50px rgba(0, 0, 0, 0.34);
+  --mapGrid: rgba(117, 175, 181, 0.14);
+  --mapRoad: rgba(255, 255, 255, 0.1);
+  --mapWater: rgba(85, 199, 211, 0.28);
 }
 
 * {
@@ -26,7 +60,7 @@
 body {
   margin: 0;
   color: var(--ink);
-  background: #eef3f0;
+  background: var(--page);
 }
 
 button,
@@ -1748,6 +1782,461 @@ textarea {
 
 .compactEmpty h3 {
   font-size: 15px;
+}
+
+/* Shiftlink exchange skin */
+.exchangeShell,
+.authShell,
+.onboarding,
+.hospitalShell,
+.appShell {
+  background:
+    linear-gradient(90deg, rgba(30, 48, 50, 0.04) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(30, 48, 50, 0.04) 1px, transparent 1px),
+    var(--page);
+  background-size: 32px 32px;
+}
+
+:root[data-theme="dark"] .exchangeShell,
+:root[data-theme="dark"] .authShell,
+:root[data-theme="dark"] .onboarding,
+:root[data-theme="dark"] .hospitalShell,
+:root[data-theme="dark"] .appShell {
+  background:
+    radial-gradient(circle at 18% 0%, rgba(85, 199, 211, 0.12), transparent 32%),
+    linear-gradient(90deg, rgba(227, 244, 246, 0.035) 1px, transparent 1px),
+    linear-gradient(180deg, rgba(227, 244, 246, 0.035) 1px, transparent 1px),
+    var(--page);
+  background-size: auto, 32px 32px, 32px 32px, auto;
+}
+
+.brandMark {
+  color: #fff;
+  background: linear-gradient(135deg, #2c7f8e, #1f5e68);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 12px 24px rgba(44, 127, 142, 0.22);
+  font-size: 14px;
+  font-weight: 950;
+  letter-spacing: 0;
+}
+
+:root[data-theme="dark"] .brandMark {
+  color: #061114;
+  background: linear-gradient(135deg, #55c7d3, #83e5c1);
+  box-shadow: 0 16px 34px rgba(85, 199, 211, 0.18);
+}
+
+.themeToggle {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 12px;
+  color: var(--ink);
+  background: var(--surfaceElevated);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 8px 20px rgba(21, 29, 31, 0.08);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.themeToggle svg {
+  color: var(--exchange);
+}
+
+.topBar {
+  border-bottom-color: var(--line);
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  box-shadow: 0 14px 34px rgba(21, 29, 31, 0.08);
+}
+
+:root[data-theme="dark"] .topBar {
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.28);
+}
+
+.tabNav,
+.modeSwitch,
+.roleToggle {
+  background: var(--soft);
+  border-color: var(--line);
+}
+
+.tabNav button,
+.modeSwitch button,
+.roleToggle button {
+  color: var(--muted);
+}
+
+.tabNav button.active,
+.modeSwitch button.active,
+.roleToggle button.active {
+  color: var(--ink);
+  background: var(--surfaceElevated);
+  box-shadow: var(--shadowLift);
+}
+
+.authPanel,
+.onboardingPanel,
+.sidePanel,
+.requestPanel,
+.hospitalFacilityPane {
+  color: var(--ink);
+  background: var(--surface);
+  border-color: var(--line);
+}
+
+.authPanel,
+.onboardingPanel {
+  box-shadow: var(--shadow);
+}
+
+.authIntro,
+.onboardingPrompt {
+  background:
+    linear-gradient(90deg, rgba(44, 127, 142, 0.08) 1px, transparent 1px),
+    var(--surfaceWarm);
+  background-size: 18px 18px;
+  border-color: var(--line);
+}
+
+.authIntro h2,
+.onboardingPrompt h2,
+.panelHeader h2,
+.drawerHeader h2,
+.facilityHero h2,
+.requestHeader h3,
+.facilityTopline h3,
+.plannedItem h3,
+.approvalTopline h3 {
+  color: var(--ink);
+}
+
+.authIntro p,
+.onboardingPrompt p,
+.brandLockup p,
+.facilityTopline p,
+.plannedItem p,
+.drawerHeader p,
+.requestHeader p,
+.facilityHero p,
+.authFootnote,
+.roleSummary span,
+.requestSectionHeader span,
+.visitBlock p,
+.visitBlock em,
+.emptyDay {
+  color: var(--muted);
+}
+
+.eyebrow,
+.evidenceList span {
+  color: var(--exchange);
+}
+
+.primaryButton,
+.chatInput button,
+.approveButton {
+  color: #fff;
+  background: var(--exchange);
+  border-color: var(--exchange);
+}
+
+:root[data-theme="dark"] .primaryButton,
+:root[data-theme="dark"] .chatInput button,
+:root[data-theme="dark"] .approveButton {
+  color: #071215;
+}
+
+.ghostButton,
+.iconTextButton,
+.logoutButton,
+.drawerActions button,
+.cardActions button,
+.mapToolbar button,
+.quickPromptRow button {
+  color: var(--ink);
+  background: var(--surfaceElevated);
+  border-color: var(--line);
+}
+
+.profileChip,
+.statusPill,
+.countBadge,
+.tierBadge,
+.requestStatus,
+.statusLabel {
+  border-color: var(--line);
+}
+
+.profileChip,
+.logoutButton,
+.roleSummary div,
+.requestStats div,
+.facilityCard,
+.plannedItem,
+.emptyState,
+.approvalCard,
+.requestCard,
+.facilityHero,
+.builderForm,
+.doctorRequestForm,
+.evidenceList div,
+.draftMessage,
+.replyBox,
+.dayColumn,
+.contactGrid a,
+.contactGrid span {
+  color: var(--ink);
+  background: var(--surfaceElevated);
+  border-color: var(--line);
+  box-shadow: 0 10px 28px rgba(21, 29, 31, 0.06);
+}
+
+.facilityCard:hover,
+.facilityCard.selected,
+.requestCard:hover {
+  border-color: color-mix(in srgb, var(--exchange) 55%, var(--line));
+  box-shadow: var(--shadowLift);
+}
+
+.message.assistant {
+  color: var(--ink);
+  background: var(--surfaceElevated);
+  border-color: var(--line);
+}
+
+.message.user {
+  color: #fff;
+  background: linear-gradient(135deg, var(--exchange), #1f5e68);
+}
+
+:root[data-theme="dark"] .message.user {
+  color: #061114;
+  background: linear-gradient(135deg, #55c7d3, #83e5c1);
+}
+
+.chatLog,
+.doctorRequestForm,
+.builderForm,
+.draftMessage,
+.replyBox,
+.textareaFrame {
+  background: var(--soft);
+  border-color: var(--line);
+}
+
+input,
+select,
+textarea,
+.authForm input,
+.authForm select,
+.chatInput input,
+.builderForm input,
+.builderForm select,
+.doctorRequestForm input,
+.doctorRequestForm select {
+  color: var(--ink);
+  background: var(--surfaceElevated);
+  border-color: var(--line);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: color-mix(in srgb, var(--muted) 72%, transparent);
+}
+
+.requestStats {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.requestStats div {
+  min-height: 96px;
+  position: relative;
+  overflow: hidden;
+}
+
+.requestStats div::after {
+  position: absolute;
+  right: -18px;
+  bottom: -22px;
+  width: 76px;
+  height: 76px;
+  content: "";
+  border: 1px solid color-mix(in srgb, var(--exchange) 32%, transparent);
+  border-radius: 50%;
+}
+
+.requestStats span {
+  color: var(--muted);
+}
+
+.requestStats strong {
+  color: var(--ink);
+}
+
+.exchangeTicker {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.exchangeTicker div {
+  min-height: 74px;
+  padding: 13px;
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--exchange) 14%, transparent), transparent),
+    var(--surfaceElevated);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 10px 28px rgba(21, 29, 31, 0.06);
+}
+
+.exchangeTicker strong {
+  display: block;
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.exchangeTicker span {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+  font-weight: 800;
+}
+
+.requestCard {
+  transition:
+    transform 150ms ease,
+    border-color 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.requestCard:hover {
+  transform: translateY(-1px);
+}
+
+.requestHeader {
+  align-items: flex-start;
+}
+
+.requestDetails,
+.facilityMeta,
+.requestPurpose,
+.facilityMatch,
+.evidenceList p,
+.approvalIntro,
+.plannedItem span,
+.visitBlock p {
+  color: var(--muted);
+}
+
+.statusPending,
+.status-draft,
+.status-reply_received,
+.visitBlock.pending,
+.visitBlock.pending_approval,
+.visitBlock.planned {
+  color: var(--amber);
+  background: var(--amberSoft);
+}
+
+.statusApproved,
+.status-appointment_confirmed,
+.visitBlock.approved,
+.visitBlock.confirmed {
+  color: var(--mint);
+  background: var(--mintSoft);
+}
+
+.statusDenied,
+.visitBlock.denied {
+  color: var(--coral);
+  background: var(--coralSoft);
+}
+
+.countBadge {
+  color: var(--exchange);
+  background: var(--exchangeSoft);
+}
+
+.mapWorkspace {
+  background:
+    linear-gradient(90deg, var(--mapGrid) 1px, transparent 1px),
+    linear-gradient(180deg, var(--mapGrid) 1px, transparent 1px),
+    #e9eff0;
+  background-size: 64px 64px;
+}
+
+:root[data-theme="dark"] .mapWorkspace {
+  background:
+    linear-gradient(90deg, var(--mapGrid) 1px, transparent 1px),
+    linear-gradient(180deg, var(--mapGrid) 1px, transparent 1px),
+    #111a1e;
+}
+
+.fallbackMap {
+  background:
+    linear-gradient(90deg, var(--mapGrid) 1px, transparent 1px),
+    linear-gradient(0deg, var(--mapGrid) 1px, transparent 1px),
+    linear-gradient(135deg, color-mix(in srgb, var(--exchange) 10%, var(--page)), var(--soft));
+  background-size:
+    72px 72px,
+    72px 72px,
+    auto;
+}
+
+.arterial {
+  background: var(--mapRoad);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--exchange) 16%, transparent);
+}
+
+.riverLine {
+  background: var(--mapWater);
+}
+
+:root[data-theme="dark"] .googleMap {
+  filter: saturate(0.72) brightness(0.72) contrast(1.08);
+}
+
+.mapToolbar,
+.evidenceDrawer,
+.scheduleRibbon,
+.mapProviderBadge,
+.mapKeyHint {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--surfaceElevated) 92%, transparent);
+  border-color: var(--line);
+  box-shadow: var(--shadowLift);
+}
+
+.evidenceDrawer {
+  backdrop-filter: blur(18px);
+}
+
+.googleMarkerPin {
+  border-color: var(--surfaceElevated);
+}
+
+.mapMarker {
+  border-color: var(--surfaceElevated);
+}
+
+.hospitalWorkspace {
+  background: color-mix(in srgb, var(--page) 84%, var(--surface));
+}
+
+.hospitalFacilityPane {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--exchange) 7%, transparent), transparent 220px),
+    var(--surface);
+}
+
+.hospitalTopBar .accountCluster {
+  justify-self: end;
 }
 
 @media (max-width: 1060px) {

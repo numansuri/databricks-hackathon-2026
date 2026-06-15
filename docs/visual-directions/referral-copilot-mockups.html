@@ -1,0 +1,2621 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Referral Copilot Visual Directions</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+        --ink: #111816;
+        --muted: #5f6d67;
+        --paper: #f7f8f4;
+        --line: rgba(31, 43, 38, 0.14);
+        --shadow-xl: 0 28px 90px rgba(17, 24, 22, 0.18);
+        --shadow-md: 0 16px 44px rgba(17, 24, 22, 0.12);
+        --shadow-sm: 0 8px 24px rgba(17, 24, 22, 0.1);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        color: var(--ink);
+        background:
+          linear-gradient(90deg, rgba(17, 24, 22, 0.04) 1px, transparent 1px),
+          linear-gradient(180deg, rgba(17, 24, 22, 0.04) 1px, transparent 1px),
+          #eef2ed;
+        background-size: 34px 34px;
+      }
+
+      button,
+      input {
+        font: inherit;
+      }
+
+      button {
+        cursor: pointer;
+      }
+
+      .board {
+        width: min(1480px, calc(100% - 36px));
+        margin: 0 auto;
+      }
+
+      .boardHeader {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 24px;
+        align-items: end;
+        padding: 40px 0 24px;
+      }
+
+      .eyebrow {
+        margin: 0 0 10px;
+        color: #216d5a;
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0;
+        text-transform: uppercase;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin-top: 0;
+      }
+
+      h1 {
+        max-width: 760px;
+        margin-bottom: 12px;
+        font-size: 36px;
+        line-height: 1.06;
+        letter-spacing: 0;
+      }
+
+      .subtitle {
+        max-width: 760px;
+        margin-bottom: 0;
+        color: var(--muted);
+        font-size: 15px;
+        line-height: 1.55;
+      }
+
+      .boardNav {
+        display: grid;
+        gap: 8px;
+      }
+
+      .boardNav a {
+        display: inline-flex;
+        min-height: 34px;
+        align-items: center;
+        justify-content: center;
+        padding: 7px 12px;
+        color: #25332e;
+        text-decoration: none;
+        background: rgba(255, 255, 255, 0.76);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        box-shadow: var(--shadow-sm);
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      .direction {
+        display: grid;
+        grid-template-columns: 260px minmax(0, 1fr);
+        gap: 24px;
+        align-items: start;
+        padding: 24px 0 54px;
+      }
+
+      .directionCopy {
+        position: sticky;
+        top: 22px;
+        padding: 18px;
+        background: rgba(255, 255, 255, 0.74);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        box-shadow: var(--shadow-sm);
+        backdrop-filter: blur(14px);
+      }
+
+      .directionNumber {
+        display: inline-flex;
+        align-items: center;
+        min-height: 26px;
+        padding: 4px 8px;
+        color: #fff;
+        background: #16201c;
+        border-radius: 5px;
+        font-size: 12px;
+        font-weight: 900;
+      }
+
+      .directionCopy h2 {
+        margin: 14px 0 9px;
+        font-size: 23px;
+        line-height: 1.08;
+        letter-spacing: 0;
+      }
+
+      .directionCopy p {
+        margin-bottom: 14px;
+        color: #52605a;
+        font-size: 13px;
+        line-height: 1.5;
+      }
+
+      .takeaways {
+        display: grid;
+        gap: 9px;
+        padding: 0;
+        margin: 0;
+        list-style: none;
+      }
+
+      .takeaways li {
+        display: grid;
+        grid-template-columns: 8px 1fr;
+        gap: 9px;
+        color: #2f3d38;
+        font-size: 12px;
+        line-height: 1.42;
+      }
+
+      .takeaways li::before {
+        width: 8px;
+        height: 8px;
+        margin-top: 5px;
+        content: "";
+        background: var(--accent, #1f8a68);
+        border-radius: 2px;
+      }
+
+      .screen {
+        overflow: hidden;
+        min-height: 740px;
+        border-radius: 8px;
+        box-shadow: var(--shadow-xl);
+      }
+
+      .screen button {
+        border: 0;
+        border-radius: 6px;
+        font-weight: 850;
+      }
+
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        min-height: 68px;
+        padding: 14px 18px;
+        border-bottom: 1px solid var(--screen-line);
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 11px;
+        min-width: 210px;
+      }
+
+      .brandMark {
+        display: grid;
+        width: 40px;
+        height: 40px;
+        place-items: center;
+        border-radius: 8px;
+        font-size: 18px;
+        font-weight: 950;
+      }
+
+      .brand strong,
+      .panelTitle strong,
+      .tinyCard strong,
+      .requestCard strong,
+      .facilityCard strong,
+      .eventCard strong {
+        display: block;
+      }
+
+      .brand span,
+      .panelTitle span,
+      .tinyCard span,
+      .requestCard span,
+      .facilityCard span,
+      .eventCard span {
+        display: block;
+        margin-top: 2px;
+        color: var(--screen-muted);
+        font-size: 11px;
+        line-height: 1.25;
+      }
+
+      .navPills {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        justify-content: center;
+      }
+
+      .navPills button {
+        min-height: 34px;
+        padding: 7px 11px;
+        color: var(--button-ink);
+        background: var(--button-bg);
+        border: 1px solid var(--button-line);
+      }
+
+      .workspace {
+        display: grid;
+        min-height: 672px;
+      }
+
+      .chatPane,
+      .sidePane,
+      .mapPane,
+      .requestStack,
+      .schedulePane {
+        min-width: 0;
+      }
+
+      .chatPane {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: 16px;
+        border-right: 1px solid var(--screen-line);
+      }
+
+      .panelTitle {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .panelTitle strong {
+        font-size: 14px;
+      }
+
+      .statusDot {
+        width: 9px;
+        height: 9px;
+        background: var(--accent);
+        border-radius: 50%;
+        box-shadow: 0 0 0 5px var(--accent-soft);
+      }
+
+      .message {
+        padding: 11px 12px;
+        border: 1px solid var(--message-line);
+        border-radius: 8px;
+        font-size: 12px;
+        line-height: 1.42;
+      }
+
+      .message.ai {
+        background: var(--message-ai);
+      }
+
+      .message.user {
+        margin-left: 18px;
+        background: var(--message-user);
+      }
+
+      .promptGrid {
+        display: grid;
+        gap: 8px;
+        margin-top: auto;
+      }
+
+      .promptGrid button {
+        min-height: 34px;
+        padding: 8px 10px;
+        color: var(--button-ink);
+        text-align: left;
+        background: var(--button-bg);
+        border: 1px solid var(--button-line);
+      }
+
+      .composer {
+        display: grid;
+        grid-template-columns: 1fr 36px;
+        gap: 8px;
+        min-height: 42px;
+      }
+
+      .composer input {
+        min-width: 0;
+        padding: 0 12px;
+        color: var(--screen-ink);
+        background: var(--input-bg);
+        border: 1px solid var(--screen-line);
+        border-radius: 6px;
+      }
+
+      .composer button {
+        display: grid;
+        place-items: center;
+        color: var(--send-ink);
+        background: var(--accent);
+      }
+
+      .mapPane {
+        position: relative;
+        overflow: hidden;
+      }
+
+      .mapBase {
+        position: absolute;
+        inset: 0;
+        background:
+          linear-gradient(90deg, transparent 0 24%, var(--road) 24.2% 24.8%, transparent 25% 100%),
+          linear-gradient(180deg, transparent 0 32%, var(--road) 32.2% 32.8%, transparent 33% 100%),
+          linear-gradient(120deg, transparent 0 42%, var(--road-strong) 42.2% 42.9%, transparent 43% 100%),
+          linear-gradient(42deg, transparent 0 58%, var(--road) 58.2% 59%, transparent 59.2% 100%),
+          var(--map-bg);
+        background-size: 200px 180px, 230px 220px, 320px 280px, 260px 240px, auto;
+      }
+
+      .contours {
+        position: absolute;
+        inset: -80px;
+        opacity: var(--contour-opacity);
+        background:
+          repeating-radial-gradient(
+            ellipse at 20% 24%,
+            transparent 0 18px,
+            var(--contour) 19px 20px,
+            transparent 21px 38px
+          ),
+          repeating-radial-gradient(
+            ellipse at 74% 62%,
+            transparent 0 24px,
+            var(--contour) 25px 26px,
+            transparent 27px 46px
+          );
+      }
+
+      .mapToolbar,
+      .metricShelf,
+      .floatingPanel,
+      .facilityCard,
+      .routeRibbon,
+      .dayStrip,
+      .eventCard,
+      .signalCard,
+      .requestCard,
+      .mapLegend,
+      .warmRoster {
+        position: relative;
+        z-index: 2;
+      }
+
+      .mapToolbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        padding: 16px;
+      }
+
+      .mapToolbar button {
+        min-height: 32px;
+        padding: 7px 10px;
+        color: var(--chip-ink);
+        background: var(--chip-bg);
+        border: 1px solid var(--chip-line);
+        box-shadow: var(--shadow-sm);
+      }
+
+      .marker {
+        position: absolute;
+        z-index: 3;
+        width: 22px;
+        height: 22px;
+        border: 4px solid var(--marker-ring);
+        background: var(--marker);
+        border-radius: 50%;
+        box-shadow: 0 14px 28px rgba(0, 0, 0, 0.2);
+      }
+
+      .marker::after {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 42px;
+        height: 42px;
+        content: "";
+        border: 1px solid var(--marker);
+        border-radius: 50%;
+        transform: translate(-50%, -50%);
+        opacity: 0.28;
+      }
+
+      .routeLine {
+        position: absolute;
+        z-index: 2;
+        height: 4px;
+        background: var(--route);
+        border-radius: 999px;
+        box-shadow: 0 0 0 6px var(--route-soft);
+        transform-origin: left center;
+      }
+
+      .floatingPanel,
+      .facilityCard,
+      .eventCard,
+      .requestCard,
+      .signalCard {
+        border: 1px solid var(--card-line);
+        border-radius: 8px;
+        box-shadow: var(--shadow-md);
+      }
+
+      .floatingPanel {
+        position: absolute;
+        right: 18px;
+        bottom: 18px;
+        width: min(310px, calc(100% - 36px));
+        padding: 14px;
+        color: var(--panel-ink);
+        background: var(--panel-bg);
+        backdrop-filter: blur(18px);
+      }
+
+      .floatingPanel h3 {
+        margin-bottom: 6px;
+        font-size: 15px;
+      }
+
+      .scoreRow {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 10px;
+        align-items: end;
+      }
+
+      .score {
+        font-size: 40px;
+        line-height: 0.95;
+        font-weight: 950;
+      }
+
+      .scoreRow p {
+        margin: 8px 0 0;
+        color: var(--screen-muted);
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      .actionRow {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 12px;
+      }
+
+      .actionRow button {
+        min-height: 34px;
+        padding: 8px 11px;
+      }
+
+      .primaryAction {
+        color: var(--send-ink);
+        background: var(--accent);
+      }
+
+      .secondaryAction {
+        color: var(--button-ink);
+        background: var(--button-bg);
+        border: 1px solid var(--button-line);
+      }
+
+      .sidePane,
+      .schedulePane {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: 16px;
+        border-left: 1px solid var(--screen-line);
+      }
+
+      .tinyCard,
+      .facilityCard,
+      .eventCard,
+      .signalCard,
+      .requestCard {
+        padding: 12px;
+        background: var(--card-bg);
+      }
+
+      .tinyCard {
+        border: 1px solid var(--card-line);
+        border-radius: 8px;
+      }
+
+      .timeGrid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+      }
+
+      .timeSlot {
+        min-height: 54px;
+        padding: 8px;
+        color: var(--screen-ink);
+        background: var(--slot-bg);
+        border: 1px solid var(--card-line);
+        border-radius: 6px;
+        font-size: 11px;
+        font-weight: 850;
+      }
+
+      .progressRail {
+        display: grid;
+        gap: 8px;
+      }
+
+      .railStep {
+        display: grid;
+        grid-template-columns: 9px 1fr auto;
+        gap: 8px;
+        align-items: center;
+        min-height: 32px;
+        color: var(--screen-ink);
+        font-size: 11px;
+        font-weight: 800;
+      }
+
+      .railStep::before {
+        width: 9px;
+        height: 9px;
+        content: "";
+        background: var(--accent);
+        border-radius: 50%;
+      }
+
+      .railStep span {
+        color: var(--screen-muted);
+        font-size: 10px;
+      }
+
+      .command {
+        --accent: #1f8a68;
+        --accent-soft: rgba(31, 138, 104, 0.14);
+        --screen-ink: #14211d;
+        --screen-muted: #66746f;
+        --screen-line: rgba(32, 54, 45, 0.14);
+        --button-ink: #1d3029;
+        --button-bg: rgba(255, 255, 255, 0.76);
+        --button-line: rgba(31, 55, 45, 0.15);
+        --input-bg: rgba(255, 255, 255, 0.78);
+        --send-ink: #ffffff;
+        --message-line: rgba(31, 55, 45, 0.13);
+        --message-ai: rgba(255, 255, 255, 0.78);
+        --message-user: #e2f3ec;
+        --map-bg: #dfe9e3;
+        --road: rgba(255, 255, 255, 0.72);
+        --road-strong: rgba(93, 137, 120, 0.34);
+        --contour: rgba(33, 85, 66, 0.18);
+        --contour-opacity: 0.9;
+        --route: #c94f3d;
+        --route-soft: rgba(201, 79, 61, 0.15);
+        --marker: #c94f3d;
+        --marker-ring: #fff8f2;
+        --chip-ink: #163127;
+        --chip-bg: rgba(255, 255, 255, 0.78);
+        --chip-line: rgba(23, 54, 42, 0.14);
+        --panel-ink: #17201c;
+        --panel-bg: rgba(255, 255, 255, 0.82);
+        --card-bg: rgba(255, 255, 255, 0.82);
+        --card-line: rgba(32, 54, 45, 0.14);
+        --slot-bg: rgba(246, 250, 248, 0.88);
+        background: #f5f8f5;
+      }
+
+      .command .brandMark {
+        color: #fff;
+        background: #17201c;
+      }
+
+      .command .workspace {
+        grid-template-columns: 292px minmax(420px, 1fr) 270px;
+      }
+
+      .command .facilityCard {
+        position: absolute;
+        left: 26px;
+        bottom: 116px;
+        width: 276px;
+        background: rgba(255, 255, 255, 0.86);
+        backdrop-filter: blur(18px);
+      }
+
+      .command .metricShelf {
+        position: absolute;
+        left: 26px;
+        top: 86px;
+        display: grid;
+        grid-template-columns: repeat(3, 88px);
+        gap: 8px;
+      }
+
+      .command .metricShelf .tinyCard {
+        min-height: 74px;
+      }
+
+      .dispatch {
+        --accent: #36d89c;
+        --accent-soft: rgba(54, 216, 156, 0.16);
+        --screen-ink: #f5fff9;
+        --screen-muted: #a9bbb3;
+        --screen-line: rgba(236, 255, 247, 0.12);
+        --button-ink: #eafff5;
+        --button-bg: rgba(255, 255, 255, 0.07);
+        --button-line: rgba(255, 255, 255, 0.12);
+        --input-bg: rgba(5, 16, 13, 0.68);
+        --send-ink: #07100d;
+        --message-line: rgba(236, 255, 247, 0.12);
+        --message-ai: rgba(255, 255, 255, 0.07);
+        --message-user: rgba(54, 216, 156, 0.12);
+        --map-bg: #101713;
+        --road: rgba(255, 255, 255, 0.08);
+        --road-strong: rgba(255, 181, 71, 0.18);
+        --contour: rgba(54, 216, 156, 0.14);
+        --contour-opacity: 0.74;
+        --route: #ffb547;
+        --route-soft: rgba(255, 181, 71, 0.14);
+        --marker: #ff5f57;
+        --marker-ring: #141d18;
+        --chip-ink: #f4fff9;
+        --chip-bg: rgba(255, 255, 255, 0.08);
+        --chip-line: rgba(255, 255, 255, 0.12);
+        --panel-ink: #f5fff9;
+        --panel-bg: rgba(8, 17, 14, 0.78);
+        --card-bg: rgba(255, 255, 255, 0.07);
+        --card-line: rgba(236, 255, 247, 0.13);
+        --slot-bg: rgba(255, 255, 255, 0.06);
+        color: var(--screen-ink);
+        background: #090f0c;
+      }
+
+      .dispatch .brandMark {
+        color: #07100d;
+        background: #36d89c;
+      }
+
+      .dispatch .workspace {
+        grid-template-columns: 276px minmax(420px, 1fr) 330px;
+      }
+
+      .dispatch .topbar,
+      .dispatch .chatPane,
+      .dispatch .sidePane {
+        background: rgba(255, 255, 255, 0.03);
+      }
+
+      .routeRibbon {
+        position: absolute;
+        left: 18px;
+        right: 18px;
+        bottom: 18px;
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 9px;
+      }
+
+      .routeRibbon .signalCard {
+        min-height: 88px;
+        background: rgba(5, 14, 11, 0.78);
+        backdrop-filter: blur(16px);
+      }
+
+      .dispatch .requestStack {
+        display: grid;
+        gap: 11px;
+      }
+
+      .dispatch .requestCard {
+        min-height: 108px;
+      }
+
+      .pulseColumn {
+        display: grid;
+        grid-template-columns: 44px 1fr;
+        gap: 10px;
+        align-items: center;
+      }
+
+      .pulseBars {
+        display: flex;
+        align-items: end;
+        gap: 3px;
+        height: 34px;
+      }
+
+      .pulseBars i {
+        width: 5px;
+        background: var(--accent);
+        border-radius: 2px;
+      }
+
+      .pulseBars i:nth-child(1) {
+        height: 14px;
+      }
+
+      .pulseBars i:nth-child(2) {
+        height: 24px;
+      }
+
+      .pulseBars i:nth-child(3) {
+        height: 18px;
+      }
+
+      .pulseBars i:nth-child(4) {
+        height: 32px;
+      }
+
+      .pulseBars i:nth-child(5) {
+        height: 20px;
+      }
+
+      .warm {
+        --accent: #e55d4a;
+        --accent-soft: rgba(229, 93, 74, 0.15);
+        --screen-ink: #17201d;
+        --screen-muted: #6b716e;
+        --screen-line: rgba(44, 61, 55, 0.13);
+        --button-ink: #1f302a;
+        --button-bg: rgba(255, 255, 255, 0.82);
+        --button-line: rgba(44, 61, 55, 0.13);
+        --input-bg: rgba(255, 255, 255, 0.88);
+        --send-ink: #ffffff;
+        --message-line: rgba(44, 61, 55, 0.12);
+        --message-ai: rgba(255, 255, 255, 0.82);
+        --message-user: #edf5f0;
+        --map-bg: #edf0e8;
+        --road: rgba(255, 255, 255, 0.8);
+        --road-strong: rgba(72, 123, 105, 0.24);
+        --contour: rgba(48, 95, 78, 0.15);
+        --contour-opacity: 0.86;
+        --route: #3c8f7c;
+        --route-soft: rgba(60, 143, 124, 0.16);
+        --marker: #e55d4a;
+        --marker-ring: #fffdfa;
+        --chip-ink: #1f302a;
+        --chip-bg: rgba(255, 255, 255, 0.78);
+        --chip-line: rgba(44, 61, 55, 0.13);
+        --panel-ink: #17201d;
+        --panel-bg: rgba(255, 255, 255, 0.84);
+        --card-bg: rgba(255, 255, 255, 0.84);
+        --card-line: rgba(44, 61, 55, 0.12);
+        --slot-bg: rgba(255, 255, 255, 0.66);
+        background:
+          linear-gradient(135deg, rgba(229, 93, 74, 0.08), transparent 34%),
+          linear-gradient(315deg, rgba(60, 143, 124, 0.11), transparent 38%),
+          #faf8f1;
+      }
+
+      .warm .brandMark {
+        color: #ffffff;
+        background: #e55d4a;
+      }
+
+      .warm .workspace {
+        grid-template-columns: 302px minmax(390px, 1fr);
+      }
+
+      .warm .chatPane {
+        background: rgba(255, 255, 255, 0.5);
+      }
+
+      .warm .mapPane {
+        display: grid;
+        grid-template-rows: minmax(360px, 1fr) auto;
+      }
+
+      .warm .mapStage {
+        position: relative;
+        min-height: 420px;
+        overflow: hidden;
+      }
+
+      .warm .scheduleRibbon {
+        position: relative;
+        z-index: 4;
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 10px;
+        padding: 14px;
+        background: rgba(255, 255, 255, 0.52);
+        border-top: 1px solid var(--screen-line);
+        backdrop-filter: blur(12px);
+      }
+
+      .warm .scheduleRibbon .eventCard {
+        min-height: 112px;
+      }
+
+      .warmRoster {
+        position: absolute;
+        right: 18px;
+        top: 76px;
+        display: grid;
+        width: 270px;
+        gap: 10px;
+      }
+
+      .avatarRow {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 11px;
+      }
+
+      .avatar {
+        display: grid;
+        width: 28px;
+        height: 28px;
+        place-items: center;
+        color: #fff;
+        background: #17201d;
+        border: 2px solid #fff;
+        border-radius: 50%;
+        font-size: 10px;
+        font-weight: 900;
+      }
+
+      .mapLegend {
+        position: absolute;
+        left: 18px;
+        top: 76px;
+        display: grid;
+        gap: 8px;
+        width: 224px;
+      }
+
+      .legendRow {
+        display: grid;
+        grid-template-columns: 10px 1fr auto;
+        gap: 9px;
+        align-items: center;
+        min-height: 34px;
+        padding: 8px 10px;
+        color: var(--screen-ink);
+        background: var(--card-bg);
+        border: 1px solid var(--card-line);
+        border-radius: 8px;
+        box-shadow: var(--shadow-sm);
+        font-size: 11px;
+        font-weight: 850;
+      }
+
+      .legendRow::before {
+        width: 10px;
+        height: 10px;
+        content: "";
+        background: var(--accent);
+        border-radius: 3px;
+      }
+
+      .legendRow span {
+        color: var(--screen-muted);
+        font-size: 10px;
+      }
+
+      .tag {
+        display: inline-flex;
+        min-height: 22px;
+        align-items: center;
+        padding: 4px 7px;
+        color: var(--send-ink);
+        background: var(--accent);
+        border-radius: 5px;
+        font-size: 10px;
+        font-weight: 900;
+      }
+
+      .divider {
+        width: 100%;
+        height: 1px;
+        background: var(--screen-line);
+      }
+
+      .researchLens {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 12px;
+        margin: 0 0 18px;
+      }
+
+      .researchCard {
+        min-height: 118px;
+        padding: 14px;
+        background: rgba(255, 255, 255, 0.72);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        box-shadow: var(--shadow-sm);
+      }
+
+      .researchCard strong {
+        display: block;
+        margin-bottom: 8px;
+        font-size: 13px;
+      }
+
+      .researchCard span {
+        display: block;
+        color: #5b6862;
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      .altScreen {
+        color: var(--screen-ink);
+        background: var(--screen-bg);
+      }
+
+      .altScreen .workspace {
+        grid-template-columns: var(--alt-columns);
+      }
+
+      .altScreen .mapPane {
+        min-height: 672px;
+      }
+
+      .ledger {
+        --accent: #2f6f73;
+        --accent-soft: rgba(47, 111, 115, 0.14);
+        --screen-ink: #202321;
+        --screen-muted: #6d6b62;
+        --screen-line: rgba(44, 48, 43, 0.15);
+        --screen-bg: #f3f1e8;
+        --button-ink: #202321;
+        --button-bg: rgba(255, 255, 255, 0.62);
+        --button-line: rgba(44, 48, 43, 0.16);
+        --input-bg: rgba(255, 255, 255, 0.72);
+        --send-ink: #fff;
+        --message-line: rgba(44, 48, 43, 0.14);
+        --message-ai: rgba(255, 255, 255, 0.58);
+        --message-user: rgba(47, 111, 115, 0.1);
+        --map-bg: #e7e6dc;
+        --road: rgba(255, 255, 255, 0.7);
+        --road-strong: rgba(47, 111, 115, 0.28);
+        --contour: rgba(43, 62, 56, 0.17);
+        --contour-opacity: 0.72;
+        --route: #b84f3a;
+        --route-soft: rgba(184, 79, 58, 0.14);
+        --marker: #b84f3a;
+        --marker-ring: #f7f5ee;
+        --chip-ink: #202321;
+        --chip-bg: rgba(255, 255, 255, 0.68);
+        --chip-line: rgba(44, 48, 43, 0.14);
+        --panel-ink: #202321;
+        --panel-bg: rgba(255, 255, 255, 0.76);
+        --card-bg: rgba(255, 255, 255, 0.66);
+        --card-line: rgba(44, 48, 43, 0.15);
+        --slot-bg: rgba(255, 255, 255, 0.52);
+        --alt-columns: 276px minmax(410px, 1fr) 312px;
+      }
+
+      .ledger .brandMark {
+        color: #f3f1e8;
+        background: #202321;
+      }
+
+      .ledger .topbar {
+        background:
+          linear-gradient(90deg, rgba(32, 35, 33, 0.04) 1px, transparent 1px),
+          rgba(255, 255, 255, 0.42);
+        background-size: 14px 14px;
+      }
+
+      .ledger .mapPane::after {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        content: "";
+        background:
+          linear-gradient(90deg, rgba(32, 35, 33, 0.07) 1px, transparent 1px),
+          linear-gradient(180deg, rgba(32, 35, 33, 0.05) 1px, transparent 1px);
+        background-size: 28px 28px;
+        mix-blend-mode: multiply;
+      }
+
+      .ledgerStrip {
+        position: absolute;
+        left: 18px;
+        right: 18px;
+        bottom: 18px;
+        z-index: 4;
+        display: grid;
+        grid-template-columns: 1.1fr 0.9fr 0.9fr;
+        gap: 10px;
+      }
+
+      .ledger .floatingPanel {
+        right: 24px;
+        bottom: 142px;
+        width: min(340px, calc(100% - 48px));
+      }
+
+      .stamp {
+        display: inline-flex;
+        width: fit-content;
+        min-height: 24px;
+        align-items: center;
+        padding: 4px 8px;
+        color: #b84f3a;
+        border: 1px solid rgba(184, 79, 58, 0.48);
+        border-radius: 5px;
+        font-size: 10px;
+        font-weight: 950;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        transform: rotate(-1.5deg);
+      }
+
+      .ledgerList {
+        display: grid;
+        gap: 10px;
+      }
+
+      .ledgerRow {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 10px;
+        align-items: start;
+        min-height: 72px;
+        padding: 11px;
+        background: var(--card-bg);
+        border: 1px solid var(--card-line);
+        border-radius: 8px;
+      }
+
+      .ledgerRow b {
+        display: grid;
+        width: 34px;
+        height: 34px;
+        place-items: center;
+        color: #fff;
+        background: var(--accent);
+        border-radius: 6px;
+        font-size: 12px;
+      }
+
+      .ledgerRow strong {
+        display: block;
+        margin-bottom: 3px;
+      }
+
+      .ledgerRow span {
+        display: block;
+        color: var(--screen-muted);
+        font-size: 12px;
+        line-height: 1.3;
+      }
+
+      .exchange {
+        --accent: #2c7f8e;
+        --accent-soft: rgba(44, 127, 142, 0.14);
+        --screen-ink: #171d1f;
+        --screen-muted: #667176;
+        --screen-line: rgba(25, 35, 38, 0.13);
+        --screen-bg: #f8faf9;
+        --button-ink: #172126;
+        --button-bg: rgba(255, 255, 255, 0.78);
+        --button-line: rgba(25, 35, 38, 0.14);
+        --input-bg: #fff;
+        --send-ink: #fff;
+        --message-line: rgba(25, 35, 38, 0.13);
+        --message-ai: #fff;
+        --message-user: rgba(44, 127, 142, 0.1);
+        --map-bg: #e9eff0;
+        --road: rgba(255, 255, 255, 0.78);
+        --road-strong: rgba(44, 127, 142, 0.25);
+        --contour: rgba(61, 93, 98, 0.15);
+        --contour-opacity: 0.72;
+        --route: #d28a2d;
+        --route-soft: rgba(210, 138, 45, 0.14);
+        --marker: #d28a2d;
+        --marker-ring: #fff;
+        --chip-ink: #172126;
+        --chip-bg: rgba(255, 255, 255, 0.76);
+        --chip-line: rgba(25, 35, 38, 0.13);
+        --panel-ink: #171d1f;
+        --panel-bg: rgba(255, 255, 255, 0.88);
+        --card-bg: #ffffff;
+        --card-line: rgba(25, 35, 38, 0.13);
+        --slot-bg: #f5f7f6;
+        --alt-columns: 344px minmax(390px, 1fr) 292px;
+      }
+
+      .exchange .brandMark {
+        color: #fff;
+        background: #2c7f8e;
+      }
+
+      .exchange .chatPane {
+        background: #fff;
+      }
+
+      .exchange .floatingPanel {
+        bottom: 140px;
+        width: min(330px, calc(100% - 36px));
+      }
+
+      .exchangeQueue {
+        display: grid;
+        gap: 8px;
+        padding: 0;
+        margin: 0;
+        list-style: none;
+      }
+
+      .exchangeQueue li {
+        display: grid;
+        grid-template-columns: 44px 1fr auto;
+        gap: 10px;
+        align-items: center;
+        min-height: 62px;
+        padding: 10px;
+        background: var(--slot-bg);
+        border: 1px solid var(--card-line);
+        border-radius: 8px;
+      }
+
+      .exchangeQueue b {
+        color: var(--accent);
+        font-size: 13px;
+      }
+
+      .exchangeQueue em {
+        color: #7f5a1f;
+        font-size: 11px;
+        font-style: normal;
+        font-weight: 900;
+      }
+
+      .exchangeBoard {
+        position: absolute;
+        left: 18px;
+        right: 18px;
+        bottom: 18px;
+        z-index: 4;
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 10px;
+      }
+
+      .exchangeBoard .eventCard {
+        min-height: 100px;
+      }
+
+      .atlas {
+        --accent: #5b6e2e;
+        --accent-soft: rgba(91, 110, 46, 0.15);
+        --screen-ink: #151817;
+        --screen-muted: #69706b;
+        --screen-line: rgba(27, 37, 33, 0.14);
+        --screen-bg: #fbfbf7;
+        --button-ink: #151817;
+        --button-bg: rgba(255, 255, 255, 0.78);
+        --button-line: rgba(27, 37, 33, 0.14);
+        --input-bg: #fff;
+        --send-ink: #fff;
+        --message-line: rgba(27, 37, 33, 0.13);
+        --message-ai: #fff;
+        --message-user: rgba(91, 110, 46, 0.1);
+        --map-bg: #e9ebe2;
+        --road: rgba(255, 255, 255, 0.74);
+        --road-strong: rgba(91, 110, 46, 0.24);
+        --contour: rgba(56, 75, 61, 0.18);
+        --contour-opacity: 0.8;
+        --route: #5f5bbb;
+        --route-soft: rgba(95, 91, 187, 0.14);
+        --marker: #5f5bbb;
+        --marker-ring: #fff;
+        --chip-ink: #151817;
+        --chip-bg: rgba(255, 255, 255, 0.78);
+        --chip-line: rgba(27, 37, 33, 0.14);
+        --panel-ink: #151817;
+        --panel-bg: rgba(255, 255, 255, 0.88);
+        --card-bg: #fff;
+        --card-line: rgba(27, 37, 33, 0.13);
+        --slot-bg: #f7f8f3;
+        --alt-columns: 70px 310px minmax(390px, 1fr) 260px;
+      }
+
+      .atlas .brandMark {
+        color: #fff;
+        background: #151817;
+      }
+
+      .navRail {
+        display: grid;
+        align-content: start;
+        gap: 10px;
+        padding: 16px 10px;
+        background: #151817;
+        border-right: 1px solid rgba(255, 255, 255, 0.12);
+      }
+
+      .railButton {
+        display: grid;
+        width: 48px;
+        height: 48px;
+        place-items: center;
+        color: #fff;
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 8px;
+        font-size: 12px;
+        font-weight: 950;
+      }
+
+      .atlas .chatPane {
+        background: #fff;
+      }
+
+      .layerStack {
+        position: absolute;
+        left: 18px;
+        top: 82px;
+        z-index: 5;
+        display: grid;
+        gap: 8px;
+        width: 232px;
+      }
+
+      .layerChip {
+        display: grid;
+        grid-template-columns: 12px 1fr auto;
+        gap: 9px;
+        align-items: center;
+        min-height: 40px;
+        padding: 9px 11px;
+        background: rgba(255, 255, 255, 0.82);
+        border: 1px solid var(--card-line);
+        border-radius: 8px;
+        box-shadow: var(--shadow-sm);
+        font-size: 11px;
+        font-weight: 900;
+      }
+
+      .layerChip::before {
+        width: 12px;
+        height: 12px;
+        content: "";
+        background: var(--accent);
+        border-radius: 3px;
+      }
+
+      .layerChip span {
+        color: var(--screen-muted);
+        font-size: 10px;
+      }
+
+      .atlasInspector {
+        display: grid;
+        gap: 11px;
+      }
+
+      .atlasInspector .tinyCard {
+        min-height: 80px;
+      }
+
+      .fluid {
+        --accent: #7a4e9b;
+        --accent-soft: rgba(122, 78, 155, 0.13);
+        --screen-ink: #161a22;
+        --screen-muted: #667079;
+        --screen-line: rgba(28, 37, 47, 0.13);
+        --screen-bg: #f7f8fb;
+        --button-ink: #161a22;
+        --button-bg: rgba(255, 255, 255, 0.8);
+        --button-line: rgba(28, 37, 47, 0.13);
+        --input-bg: #fff;
+        --send-ink: #fff;
+        --message-line: rgba(28, 37, 47, 0.13);
+        --message-ai: #fff;
+        --message-user: rgba(122, 78, 155, 0.1);
+        --map-bg: #e8edf1;
+        --road: rgba(255, 255, 255, 0.76);
+        --road-strong: rgba(39, 105, 119, 0.22);
+        --contour: rgba(58, 76, 89, 0.15);
+        --contour-opacity: 0.74;
+        --route: #276977;
+        --route-soft: rgba(39, 105, 119, 0.15);
+        --marker: #7a4e9b;
+        --marker-ring: #fff;
+        --chip-ink: #161a22;
+        --chip-bg: rgba(255, 255, 255, 0.78);
+        --chip-line: rgba(28, 37, 47, 0.13);
+        --panel-ink: #161a22;
+        --panel-bg: rgba(255, 255, 255, 0.88);
+        --card-bg: #fff;
+        --card-line: rgba(28, 37, 47, 0.13);
+        --slot-bg: #f2f4f7;
+        --alt-columns: minmax(320px, 0.62fr) minmax(430px, 1fr);
+      }
+
+      .fluid .brandMark {
+        color: #fff;
+        background: #276977;
+      }
+
+      .fluid .workspace {
+        container-type: inline-size;
+      }
+
+      .fluidLeft {
+        display: grid;
+        grid-template-rows: auto 1fr;
+        min-width: 0;
+        border-right: 1px solid var(--screen-line);
+      }
+
+      .fluidContext {
+        padding: 16px;
+        background: #fff;
+        border-bottom: 1px solid var(--screen-line);
+      }
+
+      .fluidPanels {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        padding: 16px;
+        background: #f7f8fb;
+        container-type: inline-size;
+      }
+
+      .fluidPanels .tinyCard {
+        min-height: 112px;
+      }
+
+      .fluidMap {
+        display: grid;
+        grid-template-rows: minmax(380px, 1fr) auto;
+      }
+
+      .fluidMapStage {
+        position: relative;
+        overflow: hidden;
+      }
+
+      .fluidSchedule {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+        gap: 10px;
+        padding: 14px;
+        background: rgba(255, 255, 255, 0.68);
+        border-top: 1px solid var(--screen-line);
+      }
+
+      .confidenceArc {
+        position: absolute;
+        right: 18px;
+        top: 86px;
+        z-index: 5;
+        display: grid;
+        width: 240px;
+        gap: 10px;
+      }
+
+      .barTrack {
+        overflow: hidden;
+        height: 8px;
+        margin-top: 10px;
+        background: rgba(28, 37, 47, 0.1);
+        border-radius: 99px;
+      }
+
+      .barFill {
+        display: block;
+        width: var(--fill);
+        height: 100%;
+        background: var(--accent);
+        border-radius: inherit;
+      }
+
+      @container (max-width: 760px) {
+        .fluidPanels {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (max-width: 1180px) {
+        .direction {
+          grid-template-columns: 1fr;
+        }
+
+        .directionCopy {
+          position: static;
+        }
+
+        .screen {
+          min-height: auto;
+        }
+
+        .command .workspace,
+        .dispatch .workspace,
+        .ledger .workspace,
+        .exchange .workspace,
+        .atlas .workspace,
+        .fluid .workspace {
+          grid-template-columns: 270px minmax(380px, 1fr);
+        }
+
+        .command .sidePane,
+        .dispatch .sidePane,
+        .ledger .sidePane,
+        .exchange .sidePane,
+        .atlas .sidePane {
+          grid-column: 1 / -1;
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          border-left: 0;
+          border-top: 1px solid var(--screen-line);
+        }
+      }
+
+      @media (max-width: 820px) {
+        .board {
+          width: min(100% - 24px, 1480px);
+        }
+
+        .boardHeader {
+          grid-template-columns: 1fr;
+          padding-top: 26px;
+        }
+
+        h1 {
+          font-size: 28px;
+        }
+
+        .boardNav {
+          grid-template-columns: repeat(2, 1fr);
+        }
+
+        .researchLens {
+          grid-template-columns: repeat(2, 1fr);
+        }
+
+        .topbar {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+
+        .navPills {
+          justify-content: flex-start;
+        }
+
+        .command .workspace,
+        .dispatch .workspace,
+        .warm .workspace,
+        .ledger .workspace,
+        .exchange .workspace,
+        .atlas .workspace,
+        .fluid .workspace {
+          grid-template-columns: 1fr;
+        }
+
+        .chatPane,
+        .sidePane {
+          border-right: 0;
+          border-left: 0;
+          border-bottom: 1px solid var(--screen-line);
+        }
+
+        .command .sidePane,
+        .dispatch .sidePane,
+        .ledger .sidePane,
+        .exchange .sidePane,
+        .atlas .sidePane {
+          grid-template-columns: 1fr;
+        }
+
+        .mapPane {
+          min-height: 520px;
+        }
+
+        .warm .mapStage {
+          min-height: 470px;
+        }
+
+        .routeRibbon,
+        .warm .scheduleRibbon,
+        .command .metricShelf,
+        .ledgerStrip,
+        .exchangeBoard,
+        .fluidPanels {
+          grid-template-columns: 1fr 1fr;
+        }
+
+        .routeRibbon,
+        .ledgerStrip,
+        .exchangeBoard {
+          position: relative;
+          left: auto;
+          right: auto;
+          bottom: auto;
+          padding: 14px;
+        }
+
+        .warm .scheduleRibbon {
+          grid-template-columns: 1fr;
+        }
+
+        .warmRoster,
+        .command .facilityCard,
+        .floatingPanel,
+        .mapLegend,
+        .layerStack,
+        .confidenceArc {
+          position: relative;
+          inset: auto;
+          width: auto;
+          margin: 12px;
+        }
+
+        .command .metricShelf {
+          position: relative;
+          left: auto;
+          top: auto;
+          padding: 0 14px;
+        }
+
+        .navRail {
+          grid-template-columns: repeat(4, 48px);
+          align-content: center;
+          padding: 12px 16px;
+        }
+
+        .fluidLeft {
+          border-right: 0;
+          border-bottom: 1px solid var(--screen-line);
+        }
+      }
+
+      @media (max-width: 560px) {
+        .boardNav,
+        .researchLens,
+        .routeRibbon,
+        .ledgerStrip,
+        .exchangeBoard,
+        .command .metricShelf,
+        .fluidPanels,
+        .timeGrid {
+          grid-template-columns: 1fr;
+        }
+
+        .direction {
+          padding-bottom: 34px;
+        }
+
+        .screen {
+          border-radius: 0;
+          margin-inline: -12px;
+        }
+
+        .brand {
+          min-width: 0;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="board">
+      <header class="boardHeader">
+        <div>
+          <p class="eyebrow">Referral Copilot visual exploration</p>
+          <h1>Seven UI directions with more depth, real product texture, and map-first energy</h1>
+          <p class="subtitle">
+            These are disposable design boards for the doctor and hospital scheduling product. The newer
+            directions push harder on fundamentals: hierarchy, density, map clarity, adaptive layout, and a
+            more human-made visual signature.
+          </p>
+        </div>
+        <nav class="boardNav" aria-label="Visual direction links">
+          <a href="#command">Command</a>
+          <a href="#dispatch">Dispatch</a>
+          <a href="#network">Network</a>
+          <a href="#ledger">Ledger</a>
+          <a href="#exchange">Exchange</a>
+          <a href="#atlas">Atlas</a>
+          <a href="#fluid">Fluid</a>
+        </nav>
+      </header>
+
+      <section class="researchLens" aria-label="Research-backed design lens">
+        <div class="researchCard">
+          <strong>Hierarchy before decoration</strong>
+          <span>Every direction gives one dominant decision surface, then uses smaller cards for evidence and alternatives.</span>
+        </div>
+        <div class="researchCard">
+          <strong>Map layers, not map clutter</strong>
+          <span>Markers, routes, filters, and callouts are separated so the map can hold data without becoming wallpaper.</span>
+        </div>
+        <div class="researchCard">
+          <strong>Fluid from the inside out</strong>
+          <span>New layouts are built around panes and modules that can collapse independently across doctor and hospital views.</span>
+        </div>
+        <div class="researchCard">
+          <strong>Human-made texture</strong>
+          <span>More tactile edges, ledger marks, imperfect map texture, and product-specific copy replace generic glossy AI styling.</span>
+        </div>
+      </section>
+
+      <section class="direction" id="command" style="--accent: #1f8a68">
+        <aside class="directionCopy">
+          <span class="directionNumber">01</span>
+          <h2>Clinical Command Center</h2>
+          <p>
+            Polished and trustworthy, but less flat. The map becomes a layered work surface, with stronger
+            evidence cards and a schedule rail that feels ready for real hospital operations.
+          </p>
+          <ul class="takeaways">
+            <li>Best if we want Databricks credibility, clean data signals, and a serious clinical feel.</li>
+            <li>Depth comes from frosted panels, raised map metrics, route lines, and compact scheduling modules.</li>
+            <li>Good default direction for the real app because it upgrades the current style without a hard reset.</li>
+          </ul>
+        </aside>
+
+        <article class="screen command">
+          <div class="topbar">
+            <div class="brand">
+              <div class="brandMark">RC</div>
+              <div>
+                <strong>Referral Copilot</strong>
+                <span>Doctor workspace</span>
+              </div>
+            </div>
+            <div class="navPills" aria-label="App areas">
+              <button>Map</button>
+              <button>Shortlist</button>
+              <button>Schedule</button>
+              <button>Outreach</button>
+            </div>
+            <div class="panelTitle">
+              <span class="statusDot"></span>
+              <div>
+                <strong>Ahmedabad live scan</strong>
+                <span>42 facilities ranked</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="workspace">
+            <aside class="chatPane">
+              <div class="panelTitle">
+                <div>
+                  <strong>Clinical context</strong>
+                  <span>Updated through chat</span>
+                </div>
+                <span class="tag">Ready</span>
+              </div>
+              <div class="message ai">
+                I matched your cardiology and ICU background against facilities with emergency stabilization
+                claims and verified phone contacts.
+              </div>
+              <div class="message user">
+                Prioritize rural camps within three hours and avoid sites without equipment evidence.
+              </div>
+              <div class="message ai">
+                Shortlist refreshed. Two hospitals can accept Tuesday requests and one clinic needs manual review.
+              </div>
+              <div class="promptGrid">
+                <button>Find high-confidence ICU matches</button>
+                <button>Add a rural screening preference</button>
+                <button>Draft outreach for this facility</button>
+              </div>
+              <div class="composer">
+                <input value="Ask about coverage gaps" aria-label="Chat draft" />
+                <button aria-label="Send">Go</button>
+              </div>
+            </aside>
+
+            <section class="mapPane">
+              <div class="mapBase"></div>
+              <div class="contours"></div>
+              <div class="mapToolbar">
+                <button>ICU evidence</button>
+                <button>Verified phone</button>
+                <button>Volunteer fit</button>
+                <button>Drive time</button>
+              </div>
+              <div class="metricShelf">
+                <div class="tinyCard">
+                  <strong>92%</strong>
+                  <span>match confidence</span>
+                </div>
+                <div class="tinyCard">
+                  <strong>18 min</strong>
+                  <span>nearest strong site</span>
+                </div>
+                <div class="tinyCard">
+                  <strong>6</strong>
+                  <span>open slots</span>
+                </div>
+              </div>
+              <div class="routeLine" style="left: 26%; top: 49%; width: 36%; transform: rotate(-18deg)"></div>
+              <div class="routeLine" style="left: 56%; top: 39%; width: 20%; transform: rotate(30deg)"></div>
+              <span class="marker" style="left: 25%; top: 48%"></span>
+              <span class="marker" style="left: 55%; top: 37%; --marker: #1f8a68"></span>
+              <span class="marker" style="left: 74%; top: 47%; --marker: #4355a1"></span>
+              <div class="facilityCard">
+                <strong>Shaurya Heart & Critical Care</strong>
+                <span>Cardiology, ICU, emergency procedure support</span>
+                <div class="actionRow">
+                  <button class="primaryAction">Request slot</button>
+                  <button class="secondaryAction">View evidence</button>
+                </div>
+              </div>
+              <div class="floatingPanel">
+                <div class="scoreRow">
+                  <div>
+                    <h3>Facility fit</h3>
+                    <p>Evidence-weighted ranking with pincode verified coordinates and contact freshness.</p>
+                  </div>
+                  <div class="score">4.6</div>
+                </div>
+              </div>
+            </section>
+
+            <aside class="sidePane">
+              <div class="panelTitle">
+                <div>
+                  <strong>Schedule builder</strong>
+                  <span>Week of Jun 15</span>
+                </div>
+              </div>
+              <div class="timeGrid">
+                <div class="timeSlot">Mon<br />10:00</div>
+                <div class="timeSlot">Tue<br />14:30</div>
+                <div class="timeSlot">Wed<br />09:00</div>
+              </div>
+              <div class="tinyCard">
+                <strong>Pending hospital reply</strong>
+                <span>Metro Community Clinic requested an alternate physician for Friday.</span>
+              </div>
+              <div class="progressRail">
+                <div class="railStep">Draft sent <span>2 min</span></div>
+                <div class="railStep">Hospital review <span>open</span></div>
+                <div class="railStep">Doctor approval <span>next</span></div>
+              </div>
+            </aside>
+          </div>
+        </article>
+      </section>
+
+      <section class="direction" id="dispatch" style="--accent: #36d89c">
+        <aside class="directionCopy">
+          <span class="directionNumber">02</span>
+          <h2>Referral Dispatch</h2>
+          <p>
+            More kinetic and high-stakes. This turns scheduling into an operations cockpit where hospitals can
+            request coverage and doctors can accept shifts with route, urgency, and demand context.
+          </p>
+          <ul class="takeaways">
+            <li>Best for demos because it feels energetic and visibly different from standard health dashboards.</li>
+            <li>Great for two-way scheduling: bids, approvals, and coverage gaps are front and center.</li>
+            <li>Riskier as a default because the darker cockpit tone may feel intense for routine use.</li>
+          </ul>
+        </aside>
+
+        <article class="screen dispatch">
+          <div class="topbar">
+            <div class="brand">
+              <div class="brandMark">RC</div>
+              <div>
+                <strong>Referral Dispatch</strong>
+                <span>Coverage control room</span>
+              </div>
+            </div>
+            <div class="navPills" aria-label="App areas">
+              <button>Demand</button>
+              <button>Coverage</button>
+              <button>Routes</button>
+              <button>Approvals</button>
+            </div>
+            <div class="panelTitle">
+              <span class="statusDot"></span>
+              <div>
+                <strong>4 urgent requests</strong>
+                <span>2 doctors available</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="workspace">
+            <aside class="chatPane">
+              <div class="panelTitle">
+                <div>
+                  <strong>Ops assistant</strong>
+                  <span>Hospital and doctor context</span>
+                </div>
+                <span class="tag">Live</span>
+              </div>
+              <div class="message ai">
+                City Medical Institute needs a cardiology consult before 16:00. Dr. Patel is available after
+                the rural screening block.
+              </div>
+              <div class="message user">
+                Show requests that can become confirmed visits today.
+              </div>
+              <div class="message ai">
+                Two requests have clean contact data, travel time under 45 minutes, and hospital approval pending.
+              </div>
+              <div class="promptGrid">
+                <button>Rank by urgency</button>
+                <button>Ask doctor to accept</button>
+                <button>Offer alternate slot</button>
+              </div>
+              <div class="composer">
+                <input value="Message both sides" aria-label="Chat draft" />
+                <button aria-label="Send">Go</button>
+              </div>
+            </aside>
+
+            <section class="mapPane">
+              <div class="mapBase"></div>
+              <div class="contours"></div>
+              <div class="mapToolbar">
+                <button>Urgent</button>
+                <button>Accepted</button>
+                <button>Needs reply</button>
+                <button>Under 45 min</button>
+              </div>
+              <div class="routeLine" style="left: 20%; top: 48%; width: 42%; transform: rotate(-7deg)"></div>
+              <div class="routeLine" style="left: 59%; top: 44%; width: 24%; transform: rotate(23deg)"></div>
+              <span class="marker" style="left: 18%; top: 47%; --marker: #36d89c"></span>
+              <span class="marker" style="left: 58%; top: 42%;"></span>
+              <span class="marker" style="left: 82%; top: 52%; --marker: #ffb547"></span>
+              <div class="floatingPanel">
+                <div class="pulseColumn">
+                  <div class="pulseBars" aria-hidden="true">
+                    <i></i><i></i><i></i><i></i><i></i>
+                  </div>
+                  <div>
+                    <h3>Coverage pulse</h3>
+                    <p>Requests cluster near Ahmedabad, with one rural transfer likely to miss the morning window.</p>
+                  </div>
+                </div>
+              </div>
+              <div class="routeRibbon">
+                <div class="signalCard">
+                  <strong>14:30</strong>
+                  <span>Dr. Patel can accept City Medical Institute</span>
+                </div>
+                <div class="signalCard">
+                  <strong>18 min</strong>
+                  <span>Drive time from current outreach block</span>
+                </div>
+                <div class="signalCard">
+                  <strong>High</strong>
+                  <span>ICU capability evidence confidence</span>
+                </div>
+                <div class="signalCard">
+                  <strong>1 click</strong>
+                  <span>Convert to confirmed schedule</span>
+                </div>
+              </div>
+            </section>
+
+            <aside class="sidePane">
+              <div class="panelTitle">
+                <div>
+                  <strong>Hospital requests</strong>
+                  <span>Awaiting doctor response</span>
+                </div>
+              </div>
+              <div class="requestStack">
+                <div class="requestCard">
+                  <strong>City Medical Institute</strong>
+                  <span>Cardiology consult requested today at 14:30.</span>
+                  <div class="actionRow">
+                    <button class="primaryAction">Accept</button>
+                    <button class="secondaryAction">Counter</button>
+                  </div>
+                </div>
+                <div class="requestCard">
+                  <strong>Metro Community Clinic</strong>
+                  <span>Rural camp staffing request for Friday morning.</span>
+                  <div class="actionRow">
+                    <button class="primaryAction">Review</button>
+                    <button class="secondaryAction">Decline</button>
+                  </div>
+                </div>
+                <div class="requestCard">
+                  <strong>Shaurya Heart</strong>
+                  <span>Follow-up slot proposed after hospital approval.</span>
+                  <div class="actionRow">
+                    <button class="primaryAction">Confirm</button>
+                    <button class="secondaryAction">Details</button>
+                  </div>
+                </div>
+              </div>
+            </aside>
+          </div>
+        </article>
+      </section>
+
+      <section class="direction" id="network" style="--accent: #e55d4a">
+        <aside class="directionCopy">
+          <span class="directionNumber">03</span>
+          <h2>Care Network Studio</h2>
+          <p>
+            Lighter, more humane, and easier to live in all day. The scheduling flow feels like a shared care
+            network rather than a queue of tickets, with warm surfaces and visible relationship context.
+          </p>
+          <ul class="takeaways">
+            <li>Best if we want the app to feel approachable for onboarding and repeated doctor use.</li>
+            <li>Strong fit for context updates because the chat panel feels conversational, not transactional.</li>
+            <li>Could blend nicely with the current UI while adding personality through map texture and roster cards.</li>
+          </ul>
+        </aside>
+
+        <article class="screen warm">
+          <div class="topbar">
+            <div class="brand">
+              <div class="brandMark">RC</div>
+              <div>
+                <strong>Care Network</strong>
+                <span>Shared schedule workspace</span>
+              </div>
+            </div>
+            <div class="navPills" aria-label="App areas">
+              <button>Map</button>
+              <button>Matches</button>
+              <button>Requests</button>
+              <button>Calendar</button>
+            </div>
+            <div class="panelTitle">
+              <span class="statusDot"></span>
+              <div>
+                <strong>Context current</strong>
+                <span>Updated today</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="workspace">
+            <aside class="chatPane">
+              <div class="panelTitle">
+                <div>
+                  <strong>Doctor profile</strong>
+                  <span>Can be changed anytime</span>
+                </div>
+                <span class="tag">Voice</span>
+              </div>
+              <div class="message ai">
+                I am using your ICU and cardiac care background, plus your preference for Gujarat and Rajasthan
+                rural camps.
+              </div>
+              <div class="message user">
+                Add that I can do telehealth follow-ups after in-person screenings.
+              </div>
+              <div class="message ai">
+                Added. I will surface hospitals that can support follow-up scheduling and reliable contact loops.
+              </div>
+              <div class="promptGrid">
+                <button>Update doctor context</button>
+                <button>Plan a screening day</button>
+                <button>Explain this match</button>
+              </div>
+              <div class="composer">
+                <input value="Add a weekend preference" aria-label="Chat draft" />
+                <button aria-label="Send">Go</button>
+              </div>
+            </aside>
+
+            <section class="mapPane">
+              <div class="mapStage">
+                <div class="mapBase"></div>
+                <div class="contours"></div>
+                <div class="mapToolbar">
+                  <button>Care gaps</button>
+                  <button>Relationship strength</button>
+                  <button>Schedule fit</button>
+                </div>
+                <div class="mapLegend">
+                  <div class="legendRow">Strong match <span>8 sites</span></div>
+                  <div class="legendRow" style="--accent: #3c8f7c">Camp-ready <span>5 sites</span></div>
+                  <div class="legendRow" style="--accent: #4355a1">Follow-up capable <span>3 sites</span></div>
+                </div>
+                <div class="routeLine" style="left: 24%; top: 55%; width: 31%; transform: rotate(-24deg)"></div>
+                <div class="routeLine" style="left: 50%; top: 42%; width: 30%; transform: rotate(13deg)"></div>
+                <span class="marker" style="left: 23%; top: 54%;"></span>
+                <span class="marker" style="left: 50%; top: 41%; --marker: #3c8f7c"></span>
+                <span class="marker" style="left: 79%; top: 48%; --marker: #4355a1"></span>
+                <div class="warmRoster">
+                  <div class="facilityCard">
+                    <strong>Care circle</strong>
+                    <span>Hospitals and doctors currently involved in this week's referrals.</span>
+                    <div class="avatarRow">
+                      <div class="avatar">AP</div>
+                      <div class="avatar">CM</div>
+                      <div class="avatar">SH</div>
+                      <div class="avatar">MC</div>
+                    </div>
+                  </div>
+                  <div class="facilityCard">
+                    <strong>Recommended next step</strong>
+                    <span>Offer Tuesday afternoon to City Medical Institute and keep Friday open for camp review.</span>
+                    <div class="actionRow">
+                      <button class="primaryAction">Send offer</button>
+                      <button class="secondaryAction">Hold slot</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="scheduleRibbon">
+                <div class="eventCard">
+                  <strong>Mon</strong>
+                  <span>Review outreach drafts and contact freshness.</span>
+                </div>
+                <div class="eventCard">
+                  <strong>Tue</strong>
+                  <span>City Medical Institute proposed consult.</span>
+                </div>
+                <div class="eventCard">
+                  <strong>Thu</strong>
+                  <span>Telehealth follow-up block available.</span>
+                </div>
+                <div class="eventCard">
+                  <strong>Fri</strong>
+                  <span>Rural screening camp awaiting approval.</span>
+                </div>
+              </div>
+            </section>
+          </div>
+        </article>
+      </section>
+
+      <section class="direction" id="ledger" style="--accent: #2f6f73">
+        <aside class="directionCopy">
+          <span class="directionNumber">04</span>
+          <h2>Signal Ledger</h2>
+          <p>
+            A more tactile field-work direction: less polished SaaS shine, more dispatch notebook. It feels
+            like evidence, calls, and approvals are being logged in a real operational record.
+          </p>
+          <ul class="takeaways">
+            <li>Best if we want to avoid the generic AI dashboard look and feel more grounded in field medicine.</li>
+            <li>Uses restrained paper texture, stamps, ledger rows, and imperfect route marks without sacrificing clarity.</li>
+            <li>Strong for auditability: every schedule decision has a visible trail of signals and human approval.</li>
+          </ul>
+        </aside>
+
+        <article class="screen altScreen ledger">
+          <div class="topbar">
+            <div class="brand">
+              <div class="brandMark">RC</div>
+              <div>
+                <strong>Signal Ledger</strong>
+                <span>Field referral log</span>
+              </div>
+            </div>
+            <div class="navPills" aria-label="App areas">
+              <button>Inbox</button>
+              <button>Map</button>
+              <button>Ledger</button>
+              <button>Approvals</button>
+            </div>
+            <div class="panelTitle">
+              <span class="statusDot"></span>
+              <div>
+                <strong>23 signals checked</strong>
+                <span>4 need human review</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="workspace">
+            <aside class="chatPane">
+              <div class="panelTitle">
+                <div>
+                  <strong>Context note</strong>
+                  <span>Doctor editable record</span>
+                </div>
+                <span class="stamp">Signed</span>
+              </div>
+              <div class="message ai">
+                Your availability is linked to cardiology consults, rural camps, and telehealth follow-up windows.
+              </div>
+              <div class="message user">
+                Keep Friday flexible unless a hospital has verified ICU equipment and transport support.
+              </div>
+              <div class="message ai">
+                Logged. Friday will be held until the receiving hospital confirms equipment and phone contact.
+              </div>
+              <div class="ledgerList">
+                <div class="ledgerRow">
+                  <b>01</b>
+                  <div>
+                    <strong>Phone verified</strong>
+                    <span>Shaurya Heart answered within two rings.</span>
+                  </div>
+                </div>
+                <div class="ledgerRow">
+                  <b>02</b>
+                  <div>
+                    <strong>Equipment signal</strong>
+                    <span>ICU and ventilator evidence found in facility profile.</span>
+                  </div>
+                </div>
+              </div>
+              <div class="composer">
+                <input value="Add a note to the referral" aria-label="Chat draft" />
+                <button aria-label="Send">Go</button>
+              </div>
+            </aside>
+
+            <section class="mapPane">
+              <div class="mapBase"></div>
+              <div class="contours"></div>
+              <div class="mapToolbar">
+                <button>Verified</button>
+                <button>Needs call</button>
+                <button>Doctor hold</button>
+                <button>Audit trail</button>
+              </div>
+              <div class="routeLine" style="left: 21%; top: 52%; width: 45%; transform: rotate(-16deg)"></div>
+              <div class="routeLine" style="left: 62%; top: 40%; width: 18%; transform: rotate(31deg)"></div>
+              <span class="marker" style="left: 20%; top: 51%"></span>
+              <span class="marker" style="left: 62%; top: 39%; --marker: #2f6f73"></span>
+              <span class="marker" style="left: 78%; top: 49%; --marker: #5f5bbb"></span>
+              <div class="floatingPanel">
+                <span class="stamp">Ready to send</span>
+                <h3 style="margin-top: 10px">Tuesday cardiology request</h3>
+                <p>Route, contact, and facility evidence are clean enough for a doctor-side approval.</p>
+                <div class="actionRow">
+                  <button class="primaryAction">Approve draft</button>
+                  <button class="secondaryAction">Call first</button>
+                </div>
+              </div>
+              <div class="ledgerStrip">
+                <div class="eventCard">
+                  <strong>Source</strong>
+                  <span>Facility profile plus contact freshness.</span>
+                </div>
+                <div class="eventCard">
+                  <strong>Risk</strong>
+                  <span>Transport support unconfirmed after 18:00.</span>
+                </div>
+                <div class="eventCard">
+                  <strong>Next</strong>
+                  <span>Send one request and hold Friday.</span>
+                </div>
+              </div>
+            </section>
+
+            <aside class="sidePane">
+              <div class="panelTitle">
+                <div>
+                  <strong>Approval trail</strong>
+                  <span>Human-readable steps</span>
+                </div>
+              </div>
+              <div class="progressRail">
+                <div class="railStep">Context updated <span>doctor</span></div>
+                <div class="railStep">Evidence matched <span>system</span></div>
+                <div class="railStep">Hospital call <span>pending</span></div>
+                <div class="railStep">Slot approval <span>next</span></div>
+              </div>
+              <div class="tinyCard">
+                <strong>Why this works</strong>
+                <span>It feels useful before it feels pretty. The visual personality comes from the workflow itself.</span>
+              </div>
+            </aside>
+          </div>
+        </article>
+      </section>
+
+      <section class="direction" id="exchange" style="--accent: #2c7f8e">
+        <aside class="directionCopy">
+          <span class="directionNumber">05</span>
+          <h2>Hospital Exchange</h2>
+          <p>
+            A denser marketplace-like control surface for two-way scheduling. Doctors and hospitals can both
+            request, counter, and confirm without losing sight of the map.
+          </p>
+          <ul class="takeaways">
+            <li>Best if the hospital view is just as important as the doctor view.</li>
+            <li>Leans into queues, row states, and clear status language instead of decorative cards.</li>
+            <li>Feels more enterprise and less generated because the layout is shaped by negotiation workflow.</li>
+          </ul>
+        </aside>
+
+        <article class="screen altScreen exchange">
+          <div class="topbar">
+            <div class="brand">
+              <div class="brandMark">RC</div>
+              <div>
+                <strong>Hospital Exchange</strong>
+                <span>Two-way scheduling</span>
+              </div>
+            </div>
+            <div class="navPills" aria-label="App areas">
+              <button>Requests</button>
+              <button>Doctors</button>
+              <button>Map</button>
+              <button>Calendar</button>
+            </div>
+            <div class="panelTitle">
+              <span class="statusDot"></span>
+              <div>
+                <strong>9 open negotiations</strong>
+                <span>3 likely to confirm</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="workspace">
+            <aside class="chatPane">
+              <div class="panelTitle">
+                <div>
+                  <strong>Request queue</strong>
+                  <span>Hospital and doctor initiated</span>
+                </div>
+                <span class="tag">Live</span>
+              </div>
+              <ul class="exchangeQueue">
+                <li>
+                  <b>14:30</b>
+                  <span>City Medical wants Dr. Patel for cardiac consult.</span>
+                  <em>Counter</em>
+                </li>
+                <li>
+                  <b>Fri</b>
+                  <span>Metro Clinic requests rural camp support.</span>
+                  <em>Review</em>
+                </li>
+                <li>
+                  <b>Thu</b>
+                  <span>Shaurya Heart accepted follow-up block.</span>
+                  <em>Confirm</em>
+                </li>
+                <li>
+                  <b>Mon</b>
+                  <span>Doctor offered telehealth after screening.</span>
+                  <em>New</em>
+                </li>
+              </ul>
+              <div class="composer">
+                <input value="Draft a counter offer" aria-label="Chat draft" />
+                <button aria-label="Send">Go</button>
+              </div>
+            </aside>
+
+            <section class="mapPane">
+              <div class="mapBase"></div>
+              <div class="contours"></div>
+              <div class="mapToolbar">
+                <button>Doctor requests</button>
+                <button>Hospital asks</button>
+                <button>Countered</button>
+              </div>
+              <div class="routeLine" style="left: 18%; top: 46%; width: 36%; transform: rotate(10deg)"></div>
+              <div class="routeLine" style="left: 52%; top: 53%; width: 34%; transform: rotate(-22deg)"></div>
+              <span class="marker" style="left: 17%; top: 45%; --marker: #2c7f8e"></span>
+              <span class="marker" style="left: 52%; top: 53%"></span>
+              <span class="marker" style="left: 84%; top: 40%; --marker: #7a4e9b"></span>
+              <div class="floatingPanel">
+                <h3>Counter proposal</h3>
+                <p>Hospital asks for 14:30. Doctor can accept 15:15 if travel stays under 35 minutes.</p>
+                <div class="actionRow">
+                  <button class="primaryAction">Send counter</button>
+                  <button class="secondaryAction">Hold slot</button>
+                </div>
+              </div>
+              <div class="exchangeBoard">
+                <div class="eventCard">
+                  <strong>Doctor offer</strong>
+                  <span>Tue 15:15, cardiology consult.</span>
+                </div>
+                <div class="eventCard">
+                  <strong>Hospital ask</strong>
+                  <span>Tue 14:30, ICU review requested.</span>
+                </div>
+                <div class="eventCard">
+                  <strong>System fit</strong>
+                  <span>92% match, 31 min travel.</span>
+                </div>
+              </div>
+            </section>
+
+            <aside class="sidePane">
+              <div class="panelTitle">
+                <div>
+                  <strong>Doctor roster</strong>
+                  <span>From user database</span>
+                </div>
+              </div>
+              <div class="tinyCard">
+                <strong>Dr. Anika Patel</strong>
+                <span>Cardiology, ICU, Tuesday afternoon open.</span>
+              </div>
+              <div class="tinyCard">
+                <strong>Dr. Mehta Rao</strong>
+                <span>Internal medicine, Friday rural camp available.</span>
+              </div>
+              <div class="tinyCard">
+                <strong>Dr. Sana Iqbal</strong>
+                <span>Telehealth follow-up only this week.</span>
+              </div>
+            </aside>
+          </div>
+        </article>
+      </section>
+
+      <section class="direction" id="atlas" style="--accent: #5b6e2e">
+        <aside class="directionCopy">
+          <span class="directionNumber">06</span>
+          <h2>Atlas Console</h2>
+          <p>
+            A map-native direction with a real app shell: navigation rail, layer stack, selected facility,
+            and inspector. It is less glossy and more like a serious spatial planning tool.
+          </p>
+          <ul class="takeaways">
+            <li>Best if Google Maps should feel like the product, not a background panel.</li>
+            <li>Good for scaling into datasets: layers, clusters, capability filters, and source confidence.</li>
+            <li>The nav rail makes desktop feel more mature while still collapsing cleanly on mobile.</li>
+          </ul>
+        </aside>
+
+        <article class="screen altScreen atlas">
+          <div class="topbar">
+            <div class="brand">
+              <div class="brandMark">RC</div>
+              <div>
+                <strong>Atlas Console</strong>
+                <span>Map-first referrals</span>
+              </div>
+            </div>
+            <div class="navPills" aria-label="App areas">
+              <button>Facilities</button>
+              <button>Layers</button>
+              <button>Schedule</button>
+            </div>
+            <div class="panelTitle">
+              <span class="statusDot"></span>
+              <div>
+                <strong>Layered map active</strong>
+                <span>capability, contact, travel</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="workspace">
+            <aside class="navRail" aria-label="Primary navigation">
+              <button class="railButton">M</button>
+              <button class="railButton">C</button>
+              <button class="railButton">S</button>
+              <button class="railButton">A</button>
+            </aside>
+
+            <aside class="chatPane">
+              <div class="panelTitle">
+                <div>
+                  <strong>Selected facility</strong>
+                  <span>Evidence and actions</span>
+                </div>
+              </div>
+              <div class="facilityCard">
+                <strong>City Medical Institute</strong>
+                <span>Internal medicine, diagnostics, partial cardiology evidence.</span>
+                <div class="actionRow">
+                  <button class="primaryAction">Request</button>
+                  <button class="secondaryAction">Compare</button>
+                </div>
+              </div>
+              <div class="message ai">
+                This facility is a partial fit: stronger on diagnostics than emergency cardiac stabilization.
+              </div>
+              <div class="promptGrid">
+                <button>Show stronger ICU matches</button>
+                <button>Filter to verified phones</button>
+                <button>Explain capability score</button>
+              </div>
+              <div class="composer">
+                <input value="Compare with Shaurya" aria-label="Chat draft" />
+                <button aria-label="Send">Go</button>
+              </div>
+            </aside>
+
+            <section class="mapPane">
+              <div class="mapBase"></div>
+              <div class="contours"></div>
+              <div class="layerStack">
+                <div class="layerChip">Cardiac capability <span>42</span></div>
+                <div class="layerChip" style="--accent: #2c7f8e">Phone confidence <span>31</span></div>
+                <div class="layerChip" style="--accent: #7a4e9b">Doctor travel fit <span>18</span></div>
+              </div>
+              <div class="routeLine" style="left: 31%; top: 57%; width: 38%; transform: rotate(-28deg)"></div>
+              <div class="routeLine" style="left: 64%; top: 39%; width: 19%; transform: rotate(18deg)"></div>
+              <span class="marker" style="left: 30%; top: 56%"></span>
+              <span class="marker" style="left: 64%; top: 38%; --marker: #2c7f8e"></span>
+              <span class="marker" style="left: 82%; top: 44%; --marker: #7a4e9b"></span>
+              <div class="floatingPanel">
+                <h3>Cluster: North Ahmedabad</h3>
+                <p>12 facilities. Zoom reveals individual hospital matches and current request status.</p>
+                <div class="actionRow">
+                  <button class="primaryAction">Zoom cluster</button>
+                  <button class="secondaryAction">Save view</button>
+                </div>
+              </div>
+            </section>
+
+            <aside class="sidePane">
+              <div class="panelTitle">
+                <div>
+                  <strong>Inspector</strong>
+                  <span>Current map selection</span>
+                </div>
+              </div>
+              <div class="atlasInspector">
+                <div class="tinyCard">
+                  <strong>Capability</strong>
+                  <span>Cardiology claim appears in specialty and description.</span>
+                </div>
+                <div class="tinyCard">
+                  <strong>Travel</strong>
+                  <span>31 minutes from previous Tuesday block.</span>
+                </div>
+                <div class="tinyCard">
+                  <strong>Action</strong>
+                  <span>Ask hospital to confirm ICU support before approving.</span>
+                </div>
+              </div>
+            </aside>
+          </div>
+        </article>
+      </section>
+
+      <section class="direction" id="fluid" style="--accent: #7a4e9b">
+        <aside class="directionCopy">
+          <span class="directionNumber">07</span>
+          <h2>Fluid Pane System</h2>
+          <p>
+            A modern adaptive layout direction. Instead of one big dashboard that shrinks badly, the product is
+            made of panes that reflow around the task: context, decision, map, and schedule.
+          </p>
+          <ul class="takeaways">
+            <li>Best if we want the same design language to support onboarding, doctor, and hospital screens.</li>
+            <li>Uses responsive modules and container-based panes so dense information can stay legible.</li>
+            <li>Feels less AI-made because the system is pragmatic: every panel has a job and a clear priority.</li>
+          </ul>
+        </aside>
+
+        <article class="screen altScreen fluid">
+          <div class="topbar">
+            <div class="brand">
+              <div class="brandMark">RC</div>
+              <div>
+                <strong>Fluid Pane System</strong>
+                <span>Adaptive scheduling app</span>
+              </div>
+            </div>
+            <div class="navPills" aria-label="App areas">
+              <button>Context</button>
+              <button>Decision</button>
+              <button>Map</button>
+              <button>Schedule</button>
+            </div>
+            <div class="panelTitle">
+              <span class="statusDot"></span>
+              <div>
+                <strong>1 decision open</strong>
+                <span>3 supporting panes</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="workspace">
+            <section class="fluidLeft">
+              <div class="fluidContext">
+                <div class="panelTitle">
+                  <div>
+                    <strong>Current decision</strong>
+                    <span>Approve, counter, or hold</span>
+                  </div>
+                  <span class="tag">Doctor</span>
+                </div>
+                <div class="message ai">
+                  City Medical can use your cardiology support Tuesday, but the hospital asked for a slot that
+                  conflicts with travel from your earlier block.
+                </div>
+                <div class="actionRow">
+                  <button class="primaryAction">Counter 15:15</button>
+                  <button class="secondaryAction">Hold 14:30</button>
+                  <button class="secondaryAction">Decline</button>
+                </div>
+              </div>
+              <div class="fluidPanels">
+                <div class="tinyCard">
+                  <strong>Doctor context</strong>
+                  <span>Cardiology, ICU, rural camps, telehealth follow-up.</span>
+                  <div class="barTrack"><span class="barFill" style="--fill: 88%"></span></div>
+                </div>
+                <div class="tinyCard">
+                  <strong>Hospital fit</strong>
+                  <span>Partial cardiac evidence, clean phone, diagnostics strong.</span>
+                  <div class="barTrack"><span class="barFill" style="--fill: 71%; --accent: #276977"></span></div>
+                </div>
+                <div class="tinyCard">
+                  <strong>Schedule load</strong>
+                  <span>One consult and one screening day already planned.</span>
+                  <div class="barTrack"><span class="barFill" style="--fill: 64%; --accent: #d28a2d"></span></div>
+                </div>
+                <div class="tinyCard">
+                  <strong>Risk note</strong>
+                  <span>Transport support should be confirmed before final approval.</span>
+                  <div class="barTrack"><span class="barFill" style="--fill: 42%; --accent: #b84f3a"></span></div>
+                </div>
+              </div>
+            </section>
+
+            <section class="mapPane fluidMap">
+              <div class="fluidMapStage">
+                <div class="mapBase"></div>
+                <div class="contours"></div>
+                <div class="mapToolbar">
+                  <button>Decision path</button>
+                  <button>Support data</button>
+                  <button>Alternate sites</button>
+                </div>
+                <div class="routeLine" style="left: 22%; top: 53%; width: 44%; transform: rotate(-8deg)"></div>
+                <div class="routeLine" style="left: 61%; top: 48%; width: 22%; transform: rotate(-28deg)"></div>
+                <span class="marker" style="left: 21%; top: 52%; --marker: #276977"></span>
+                <span class="marker" style="left: 61%; top: 47%;"></span>
+                <span class="marker" style="left: 82%; top: 37%; --marker: #d28a2d"></span>
+                <div class="confidenceArc">
+                  <div class="tinyCard">
+                    <strong>Recommendation</strong>
+                    <span>Counter at 15:15. Confidence improves if the hospital confirms ICU coverage.</span>
+                    <div class="barTrack"><span class="barFill" style="--fill: 82%"></span></div>
+                  </div>
+                  <div class="tinyCard">
+                    <strong>Alternate</strong>
+                    <span>Shaurya Heart is a stronger capability match but farther from the current block.</span>
+                  </div>
+                </div>
+              </div>
+              <div class="fluidSchedule">
+                <div class="eventCard">
+                  <strong>10:00</strong>
+                  <span>Existing screening block.</span>
+                </div>
+                <div class="eventCard">
+                  <strong>14:30</strong>
+                  <span>Hospital requested slot.</span>
+                </div>
+                <div class="eventCard">
+                  <strong>15:15</strong>
+                  <span>Recommended counter.</span>
+                </div>
+                <div class="eventCard">
+                  <strong>17:00</strong>
+                  <span>Telehealth follow-up hold.</span>
+                </div>
+              </div>
+            </section>
+          </div>
+        </article>
+      </section>
+    </div>
+  </body>
+</html>

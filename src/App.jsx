@@ -10,13 +10,13 @@ import {
   Copy,
   ExternalLink,
   FileText,
-  HeartPulse,
   Hospital,
   LogOut,
   Mail,
   MapPin,
   MessageSquareText,
   Mic,
+  Moon,
   Navigation,
   Phone,
   Plus,
@@ -26,12 +26,17 @@ import {
   Sparkles,
   Square,
   Star,
+  Sun,
   Trash2,
   UserPlus,
   UserRound,
   X
 } from "lucide-react";
 
+const APP_NAME = "Shiftlink";
+const APP_MARK = "SL";
+const APP_TAGLINE = "Hospital exchange";
+const THEME_KEY = "shiftlinkTheme";
 const USER_DATABASE_KEY = "referralCopilotUsers";
 const SESSION_USER_KEY = "referralCopilotSessionUserId";
 const SCHEDULE_REQUESTS_KEY = "referralCopilotScheduleRequests";
@@ -305,6 +310,18 @@ function App() {
   const [sessionUserId, setSessionUserId] = useState(() => localStorage.getItem(SESSION_USER_KEY) || "");
   const activeUser = users.find((user) => user.id === sessionUserId) || null;
   const [requests, setRequests] = useState(() => readJson(SCHEDULE_REQUESTS_KEY, []));
+  const [theme, setTheme] = useState(() => localStorage.getItem(THEME_KEY) || "light");
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    document.documentElement.style.colorScheme = theme;
+    document.title = APP_NAME;
+    localStorage.setItem(THEME_KEY, theme);
+  }, [theme]);
+
+  function toggleTheme() {
+    setTheme((current) => (current === "dark" ? "light" : "dark"));
+  }
 
   function persistUsers(nextUsers) {
     saveJson(USER_DATABASE_KEY, nextUsers);
@@ -424,7 +441,7 @@ function App() {
   }
 
   if (!activeUser) {
-    return <AuthGate onLogin={login} onSignUp={signUp} />;
+    return <AuthGate onLogin={login} onSignUp={signUp} theme={theme} onToggleTheme={toggleTheme} />;
   }
 
   if (activeUser.role === "hospital") {
@@ -436,6 +453,8 @@ function App() {
         onCreateDoctorRequest={createHospitalDoctorRequest}
         onUpdateRequestStatus={updateRequestStatus}
         onLogout={logout}
+        theme={theme}
+        onToggleTheme={toggleTheme}
       />
     );
   }
@@ -447,11 +466,13 @@ function App() {
       onCreateScheduleRequest={createScheduleRequest}
       onUpdateRequestStatus={updateRequestStatus}
       onLogout={logout}
+      theme={theme}
+      onToggleTheme={toggleTheme}
     />
   );
 }
 
-function DoctorApp({ user, requests, onCreateScheduleRequest, onUpdateRequestStatus, onLogout }) {
+function DoctorApp({ user, requests, onCreateScheduleRequest, onUpdateRequestStatus, onLogout, theme, onToggleTheme }) {
   const profileKey = getProfileKey(user.id);
   const outreachKey = getOutreachKey(user.id);
   const scheduleKey = getScheduleKey(user.id);
@@ -653,11 +674,11 @@ function DoctorApp({ user, requests, onCreateScheduleRequest, onUpdateRequestSta
   }
 
   if (!profile) {
-    return <Onboarding onComplete={saveProfile} />;
+    return <Onboarding onComplete={saveProfile} theme={theme} onToggleTheme={onToggleTheme} />;
   }
 
   return (
-    <div className="appShell">
+    <div className="appShell exchangeShell">
       <TopBar
         activeView={activeView}
         setActiveView={setActiveView}
@@ -667,6 +688,8 @@ function DoctorApp({ user, requests, onCreateScheduleRequest, onUpdateRequestSta
         onResetProfile={resetProfile}
         user={user}
         onLogout={onLogout}
+        theme={theme}
+        onToggleTheme={onToggleTheme}
       />
       <main className="workspace">
         <LeftPanel
@@ -706,7 +729,7 @@ function DoctorApp({ user, requests, onCreateScheduleRequest, onUpdateRequestSta
   );
 }
 
-function AuthGate({ onLogin, onSignUp }) {
+function AuthGate({ onLogin, onSignUp, theme, onToggleTheme }) {
   const [mode, setMode] = useState("signup");
   const [role, setRole] = useState("doctor");
   const [name, setName] = useState("");
@@ -764,19 +787,20 @@ function AuthGate({ onLogin, onSignUp }) {
         <div className="authIntro">
           <div className="brandLockup">
             <span className="brandMark">
-              <HeartPulse size={25} />
+              {APP_MARK}
             </span>
             <div>
-              <h1>Referral Copilot</h1>
-              <p>Role-based access</p>
+              <h1>{APP_NAME}</h1>
+              <p>{APP_TAGLINE}</p>
             </div>
+            <ThemeToggle theme={theme} onToggleTheme={onToggleTheme} />
           </div>
           <div>
             <p className="eyebrow">Sign in</p>
-            <h2>One workspace for referrals, two views for the handoff.</h2>
+            <h2>One exchange for coverage, referrals, and hospital handoffs.</h2>
             <p>
-              Doctors create their referral context during sign-up, then search, shortlist, and request
-              visits. Hospitals review requests and can invite doctors from the local user table.
+              Doctors create their clinical context during sign-up, then search, shortlist, and request visits.
+              Hospitals review inbound requests and invite doctors from the local user table.
             </p>
           </div>
           <div className="roleSummary">
@@ -937,7 +961,7 @@ function AuthGate({ onLogin, onSignUp }) {
   );
 }
 
-function Onboarding({ onComplete }) {
+function Onboarding({ onComplete, theme, onToggleTheme }) {
   const [text, setText] = useState("");
   const { recording, status, error, startRecording, stopRecording } = useProfileRecorder(setText);
 
@@ -948,12 +972,13 @@ function Onboarding({ onComplete }) {
       <section className="onboardingPanel">
         <div className="brandLockup setupBrand">
           <span className="brandMark">
-            <HeartPulse size={25} />
+            {APP_MARK}
           </span>
           <div>
-            <h1>Referral Copilot</h1>
+            <h1>{APP_NAME}</h1>
             <p>Doctor context setup</p>
           </div>
+          <ThemeToggle theme={theme} onToggleTheme={onToggleTheme} />
         </div>
         <div className="onboardingGrid">
           <div className="onboardingPrompt">
@@ -1048,7 +1073,28 @@ function StatusPill({ status }) {
   return <span className={`statusPill status-${status}`}>{copy}</span>;
 }
 
-function TopBar({ activeView, setActiveView, shortlistCount, approvalCount, profile, onResetProfile, user, onLogout }) {
+function ThemeToggle({ theme, onToggleTheme }) {
+  const isDark = theme === "dark";
+  return (
+    <button className="themeToggle" type="button" onClick={onToggleTheme} aria-label="Toggle color theme">
+      {isDark ? <Sun size={16} /> : <Moon size={16} />}
+      <span>{isDark ? "Light" : "Dark"}</span>
+    </button>
+  );
+}
+
+function TopBar({
+  activeView,
+  setActiveView,
+  shortlistCount,
+  approvalCount,
+  profile,
+  onResetProfile,
+  user,
+  onLogout,
+  theme,
+  onToggleTheme
+}) {
   const tabs = [
     { id: "search", label: "Search", icon: Search },
     { id: "outreach", label: `Outreach (${approvalCount})`, icon: MessageSquareText },
@@ -1060,11 +1106,11 @@ function TopBar({ activeView, setActiveView, shortlistCount, approvalCount, prof
     <header className="topBar">
       <div className="brandLockup compact">
         <span className="brandMark">
-          <HeartPulse size={22} />
+          {APP_MARK}
         </span>
         <div>
-          <h1>Referral Copilot</h1>
-          <p>Evidence-first referrals</p>
+          <h1>{APP_NAME}</h1>
+          <p>{APP_TAGLINE}</p>
         </div>
       </div>
       <nav className="tabNav" aria-label="Primary">
@@ -1083,6 +1129,7 @@ function TopBar({ activeView, setActiveView, shortlistCount, approvalCount, prof
         })}
       </nav>
       <div className="accountCluster">
+        <ThemeToggle theme={theme} onToggleTheme={onToggleTheme} />
         <div className="profileChip">
           <UserRound size={17} />
           <span>{getDisplayName(user)} · {profile.tags.specialties[0] || "Doctor"}</span>
@@ -1125,7 +1172,7 @@ function SearchPanel({
   const [messages, setMessages] = useState([
     {
       role: "assistant",
-      text: `I’ll prioritize ${profile.tags.specialties.join(", ") || "your specialties"} and show the evidence behind each match. You can also say “update my profile” or “forget my Rajasthan preference” and I’ll adjust your context.`
+      text: `I’ll prioritize ${profile.tags.specialties.join(", ") || "your specialties"} and show which hospital requests are worth accepting, countering, or holding. You can also say “update my profile” or “forget my Rajasthan preference” and I’ll adjust your context.`
     }
   ]);
 
@@ -1147,8 +1194,8 @@ function SearchPanel({
     <aside className="sidePanel">
       <div className="panelHeader">
         <div>
-          <p className="eyebrow">Search</p>
-          <h2>Referral chat</h2>
+          <p className="eyebrow">Doctor exchange</p>
+          <h2>Coverage assistant</h2>
         </div>
         <span className="countBadge">{facilities.length} matches</span>
       </div>
@@ -1176,7 +1223,7 @@ function SearchPanel({
         <input
           value={input}
           onChange={(event) => setInput(event.target.value)}
-          placeholder="Need emergency cardiac care near Ahmedabad"
+          placeholder="Find requests worth accepting"
         />
         <button title="Send search" type="submit">
           <Send size={18} />
@@ -1276,8 +1323,8 @@ function MapWorkspace({
           <p className="eyebrow">{activeView === "schedule" ? "Route view" : "District context"}</p>
           <h2>
             {activeView === "schedule"
-              ? "Ahmedabad visit plan"
-              : "Ahmedabad district: hypertension 35%, anaemia 48%"}
+              ? "Confirmed visits and proposed counters"
+              : "Hospital demand near Ahmedabad"}
           </h2>
         </div>
         <button>
@@ -1569,7 +1616,16 @@ function OutreachPanel({
   );
 }
 
-function HospitalDashboard({ user, doctors, requests, onCreateDoctorRequest, onUpdateRequestStatus, onLogout }) {
+function HospitalDashboard({
+  user,
+  doctors,
+  requests,
+  onCreateDoctorRequest,
+  onUpdateRequestStatus,
+  onLogout,
+  theme,
+  onToggleTheme
+}) {
   const facility = getHospitalFacility(user);
   const facilityRequests = requests.filter((request) => request.facilityId === facility.id);
   const incomingRequests = facilityRequests.filter((request) => getRequestDirection(request) === "doctor_to_hospital");
@@ -1577,41 +1633,45 @@ function HospitalDashboard({ user, doctors, requests, onCreateDoctorRequest, onU
   const pendingRequests = incomingRequests.filter((request) => request.status === "pending");
   const approvedRequests = incomingRequests.filter((request) => request.status === "approved");
   const deniedRequests = incomingRequests.filter((request) => request.status === "denied");
+  const openNegotiations = pendingRequests.length + outgoingRequests.filter((request) => request.status === "pending").length;
   const meta = tierMeta[facility.tier];
 
   return (
-    <div className="hospitalShell">
+    <div className="hospitalShell exchangeShell">
       <header className="topBar hospitalTopBar">
         <div className="brandLockup compact">
           <span className="brandMark">
-            <Hospital size={22} />
+            {APP_MARK}
           </span>
           <div>
-            <h1>Hospital Portal</h1>
+            <h1>{APP_NAME}</h1>
             <p>{facility.name}</p>
           </div>
         </div>
         <div className="hospitalIdentity">
           <span className={`tierBadge ${meta.className}`}>{meta.label} evidence</span>
-          <span>{getDisplayName(user)}</span>
+          <span>{openNegotiations} open negotiations</span>
         </div>
-        <button className="logoutButton" onClick={onLogout}>
-          <LogOut size={16} />
-          Log out
-        </button>
+        <div className="accountCluster">
+          <ThemeToggle theme={theme} onToggleTheme={onToggleTheme} />
+          <button className="logoutButton" onClick={onLogout}>
+            <LogOut size={16} />
+            Log out
+          </button>
+        </div>
       </header>
       <main className="hospitalWorkspace">
         <section className="requestPanel">
           <div className="panelHeader">
             <div>
-              <p className="eyebrow">Scheduling</p>
-              <h2>Requests</h2>
+              <p className="eyebrow">Hospital exchange</p>
+              <h2>Request queue</h2>
             </div>
             <span className="countBadge">{pendingRequests.length} pending</span>
           </div>
           <div className="requestStats">
             <div>
-              <span>Needs review</span>
+              <span>Needs decision</span>
               <strong>{pendingRequests.length}</strong>
             </div>
             <div>
@@ -1621,6 +1681,16 @@ function HospitalDashboard({ user, doctors, requests, onCreateDoctorRequest, onU
             <div>
               <span>Doctor invites</span>
               <strong>{outgoingRequests.filter((request) => request.status === "pending").length}</strong>
+            </div>
+          </div>
+          <div className="exchangeTicker" aria-label="Exchange status">
+            <div>
+              <strong>Likely to confirm</strong>
+              <span>{Math.max(approvedRequests.length, 1)} visits with clean contact data</span>
+            </div>
+            <div>
+              <strong>Needs follow-up</strong>
+              <span>{deniedRequests.length + pendingRequests.length} requests awaiting human decision</span>
             </div>
           </div>
           <HospitalDoctorRequestForm doctors={doctors} onCreateDoctorRequest={onCreateDoctorRequest} />

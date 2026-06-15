@@ -1,8 +1,8 @@
-# Referral Copilot
+# Shiftlink
 
 Frontend prototype for the Databricks Apps and Agents Hackathon for Good (DAIS 2026).
 
-Referral Copilot is a role-based referral and volunteering workflow. Doctors search facilities, inspect evidence, shortlist options, and send scheduling requests. Hospitals get a separate portal where they can approve or deny requests sent to their facility, and they can also request doctors directly from the local user table.
+Shiftlink is a role-based hospital exchange for referral and volunteering workflows. Doctors search facilities, inspect evidence, shortlist options, and send scheduling requests. Hospitals get a separate exchange view where they can approve or deny requests sent to their facility, and they can also request doctors directly from the local user table.
 
 ## Current Status
 
@@ -25,18 +25,19 @@ Implemented:
 - Google Maps fallback map when no API key is configured.
 - Pseudo facility markers using Google Maps Advanced Markers.
 - Facility cards, evidence drawer, contact links, trust tiers, shortlist actions, and schedule builder.
-- Hospital portal for facility-specific scheduling request review.
+- Hospital exchange view for facility-specific scheduling request review.
 - Hospital approve and deny actions for pending doctor-to-hospital requests.
 - Hospital-to-doctor requests from the local doctor account list.
 - Doctor accept and decline actions for hospital-originated requests.
 - Automatic schedule insertion when a doctor accepts a hospital request.
 - Local scheduling request persistence in `localStorage`.
+- Shiftlink light and dark theme toggle persisted in `localStorage`.
+- Databricks Apps bundle configuration in `databricks.yml`.
 - Production build with Vite.
 
 Not implemented yet:
 
 - FastAPI backend.
-- Databricks Apps deployment wrapper.
 - Live Databricks SQL queries from the frontend.
 - Persistent backend tables for users, doctor profiles, shortlists, schedules, or two-way scheduling decisions.
 - Real OpenAI Whisper transcription endpoint.
@@ -72,6 +73,7 @@ Useful repo context:
 
 - `findings/dataset-deep-dive.md` summarizes the source tables and data quality traps.
 - `docs/superpowers/specs/2026-06-15-referral-copilot-design.md` contains the broader design spec.
+- `docs/visual-directions/referral-copilot-mockups.html` contains the visual direction board used before selecting the Hospital Exchange design direction.
 - `explore.py` is a local Databricks exploration script. It is not part of the React app runtime.
 
 ## App Flows
@@ -85,7 +87,7 @@ Supported local account types:
 - `doctor`
 - `hospital`
 
-Doctor accounts provide practice context during sign-up, then enter the referral workspace. Hospital accounts enter their hospital name, street address, phone number, and optional Facebook page, then enter that hospital's portal.
+Doctor accounts provide practice context during sign-up, then enter the referral workspace. Hospital accounts enter their hospital name, street address, phone number, and optional Facebook page, then enter that hospital's exchange view.
 
 Current local storage keys:
 
@@ -135,11 +137,11 @@ The Schedule tab lets the doctor add planned visits to facilities. Adding a visi
 
 The same tab shows hospital-to-doctor requests. The doctor can accept or decline those requests. Accepting a hospital request changes that request to `approved` and inserts the visit into the doctor's in-memory schedule.
 
-### Hospital Portal
+### Hospital Exchange
 
-Hospital users see a facility-specific request queue. Requests are filtered by the hospital profile created during sign-up.
+Hospital users see a facility-specific exchange queue. Requests are filtered by the hospital profile created during sign-up.
 
-The portal shows:
+The exchange view shows:
 
 - pending, approved, and denied counts
 - a request form populated from local doctor accounts
@@ -214,6 +216,24 @@ Preview a production build:
 npm run preview
 ```
 
+Run the production start command used by Databricks Apps:
+
+```bash
+npm run start
+```
+
+## Databricks Apps Configuration
+
+`databricks.yml` defines a Databricks Apps bundle for the existing app resource:
+
+- App resource name: `referral_copilot`
+- Databricks app name: `referral-copilot`
+- Workspace host: `https://dbc-87f85fc5-dc00.cloud.databricks.com`
+- Start command: `npm run start`
+- Google Maps secret reference: scope `referral-copilot`, key `google-maps-api-key`
+
+The Databricks app resource name and URL still use the earlier `referral-copilot` deployment name, while the product UI shown to users is Shiftlink.
+
 ## Google Maps Configuration
 
 The live map branch is enabled when `VITE_GOOGLE_MAPS_API_KEY` is present.
@@ -233,7 +253,11 @@ The `.env` file is ignored by git. Do not commit real API keys.
 ```text
 .
 |-- README.md
-|-- docs/superpowers/specs/2026-06-15-referral-copilot-design.md
+|-- databricks.yml
+|-- docs/
+|   |-- visual-directions/
+|   |   `-- referral-copilot-mockups.html
+|   `-- superpowers/specs/2026-06-15-referral-copilot-design.md
 |-- findings/dataset-deep-dive.md
 |-- ideas/README.md
 |-- explore.py
@@ -269,7 +293,7 @@ At the time this README was written:
 - `npm run build` completed successfully.
 - `npm audit --json` reported zero vulnerabilities.
 - A standalone Playwright smoke test confirmed doctor sign-up shows the context textarea and `Speak` control, blocks account creation until context exists, and saves the profile under the new doctor account.
-- A standalone Playwright smoke test confirmed hospital sign-up captures hospital name, street address, phone number, and optional Facebook page, removes the pseudo facility selector, and renders the saved hospital profile in the portal.
+- A standalone Playwright smoke test confirmed hospital sign-up captures hospital name, street address, phone number, and optional Facebook page, removes the pseudo facility selector, and renders the saved hospital profile in the exchange view.
 - A standalone Playwright smoke test completed doctor signup, hospital signup, hospital-to-doctor request creation, doctor acceptance, and approved schedule insertion.
 - The local browser rendered the live Google Maps branch with three pseudo facility markers when a Maps API key was present.
 - The browser console had no warnings or errors after switching to async Maps loading and Advanced Markers.
@@ -294,4 +318,4 @@ At the time this README was written:
 6. Replace pseudo facility data with scored Databricks results.
 7. Add LLM-backed query parsing and evidence scoring.
 8. Add email draft generation.
-9. Package the frontend and backend for Databricks Apps.
+9. Add the backend service to the Databricks Apps bundle.
