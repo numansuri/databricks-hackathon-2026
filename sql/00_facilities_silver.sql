@@ -48,6 +48,17 @@ clean AS (
     CASE WHEN lower(trim(post_metrics_most_recent_social_media_post_date)) IN ('null','na','') THEN NULL
          ELSE trim(post_metrics_most_recent_social_media_post_date) END                                              AS social_post_date_raw,
     CASE WHEN lower(trim(description)) IN ('null','na','') THEN NULL ELSE trim(description) END AS description,
+    -- additional location passthroughs (trim + literal-null-normalized)
+    CASE WHEN lower(trim(address_line2)) IN ('null','na','') THEN NULL ELSE trim(address_line2) END AS address_line2,
+    CASE WHEN lower(trim(address_line3)) IN ('null','na','') THEN NULL ELSE trim(address_line3) END AS address_line3,
+    CASE WHEN lower(trim(area))          IN ('null','na','') THEN NULL ELSE trim(area) END          AS area,
+    -- affiliation type ids (JSON-array string -> distinct real array)
+    array_distinct(coalesce(try_cast(from_json(affiliationTypeIds, 'array<string>') AS array<string>), array())) AS affiliation_type_ids_arr,
+    -- count of mined facts about the organization (typed int)
+    try_cast(number_of_facts_about_the_organization AS int) AS number_of_facts,
+    -- provenance source URLs (JSON-array string -> real array, kept ordered/with dupes) + its size
+    coalesce(try_cast(from_json(source_urls, 'array<string>') AS array<string>), array()) AS source_urls_arr,
+    size(coalesce(try_cast(from_json(source_urls, 'array<string>') AS array<string>), array())) AS source_url_count,
     -- JSON-array string columns -> real arrays (array_distinct where dupes are common)
     array_distinct(coalesce(try_cast(from_json(specialties, 'array<string>') AS array<string>), array())) AS specialties_clean,
     coalesce(try_cast(from_json(phone_numbers, 'array<string>') AS array<string>), array())                AS phone_numbers_arr,

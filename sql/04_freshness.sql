@@ -3,7 +3,7 @@
 -- Coverage: Grain validated: COUNT(*)=COUNT(DISTINCT facility_sk)=9989, one row per canonical facility_sk. Field population: page_update_date non-null 3531/9989; social_post_date non-null 4907/9989; days_since_page_update non-null 3531 (derived from page_update_date); data_freshness_score no
 
 CREATE OR REPLACE TABLE workspace.virtue_foundation_enriched.facilities_enrich_freshness AS
-WITH base AS (
+WITH parsed AS (
   SELECT
     facility_sk,
     CASE
@@ -14,13 +14,22 @@ WITH base AS (
           CASE regexp_extract(lower(recency_of_page_update_raw),'(day|week|month|year)',1)
                WHEN 'day' THEN 1 WHEN 'week' THEN 7 WHEN 'month' THEN 30 WHEN 'year' THEN 365 ELSE 0 END)
       ELSE NULL
-    END AS page_update_date,
+    END AS page_update_date_raw,
     CASE
       WHEN social_post_date_raw RLIKE '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' THEN to_date(social_post_date_raw)
       ELSE NULL
-    END AS social_post_date
+    END AS social_post_date_raw
   FROM workspace.virtue_foundation_enriched.facilities_silver
   WHERE is_canonical
+),
+base AS (
+  -- Clamp any parsed date strictly AFTER the scrape anchor (2025-12-21) to NULL:
+  -- a page/post cannot have been updated after the data was scraped.
+  SELECT
+    facility_sk,
+    CASE WHEN page_update_date_raw > DATE'2025-12-21' THEN NULL ELSE page_update_date_raw END AS page_update_date,
+    CASE WHEN social_post_date_raw > DATE'2025-12-21' THEN NULL ELSE social_post_date_raw END AS social_post_date
+  FROM parsed
 ),
 calc AS (
   SELECT

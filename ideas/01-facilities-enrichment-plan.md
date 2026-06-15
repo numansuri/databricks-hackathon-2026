@@ -1,7 +1,7 @@
 # Facilities Enrichment Plan v2 — Virtue Foundation (DAIS 2026)
 
 **Date:** 2026-06-15 · **Status:** `built` (deterministic core; LLM/scrape follow-ups pending) · codex-reviewed
-**Build:** all tables live in `workspace.virtue_foundation_enriched`; `facilities_gold` = 9,989 facilities × 86 cols. See [`../sql/README.md`](../sql/README.md).
+**Build:** all tables live in `workspace.virtue_foundation_enriched`; `facilities_gold` = 9,989 facilities × 176 cols (grew 86 → 147 → 176; see Coverage audit). See [`../sql/README.md`](../sql/README.md).
 **Source table:** `databricks_virtue_foundation_dataset_dais_2026.virtue_foundation_dataset.facilities`
 **Output location:** `workspace.virtue_foundation_enriched.*` (see note below)
 **Companion:** [`../findings/dataset-deep-dive.md`](../findings/dataset-deep-dive.md)
@@ -231,3 +231,94 @@ if we need real parallel isolation/retries — i.e. just the LLM (WS-1/2 `ai_que
 3. **`ai_query` budget** for WS-1/2 — only flagged rows, small; proceed.
 4. ✅ **Snapshot anchor date** for relative dates = **2025-12-21**.
 5. ✅ **Dedup** = keep-all + `is_canonical` (per `facility_sk`, 9,989) for analytics.
+
+---
+
+## Coverage audit (2026-06-15)
+
+The deterministic core was **rebuilt and expanded** after the original fan-out build. Summary of the delta:
+
+**New enrichment tables** (all `CREATE OR REPLACE`, canonical grain unless noted):
+- `facilities_enrich_clinical_facts` (WS-10) — free-text clinical signal flags (`offers_robotic_surgery`,
+  `offers_transplant`, `offers_chemotherapy`, `offers_radiotherapy`, `is_trauma_center`, `offers_telemedicine`,
+  `offers_ambulance`, `cf_is_jci_accredited`), `clinical_facts_count`, mined `ot_count_text`. Mines the
+  previously-dropped **`procedure`** column (richest clinical source).
+- `facilities_enrich_profile` (WS-11) — `year_established`, `facility_age_years`/`facility_age_tier`,
+  structured + text-mined `doctor_count` with `*_source`/`*_confidence`, `staffing_tier`, `description`,
+  `area`, null-safe `address_full`.
+- `facilities_enrich_trust` (WS-12) — digital legitimacy (`has_affiliated_staff`, `has_custom_logo`),
+  passthrough counts (`org_facts_count`, `social_post_count`, `social_presence_count`, `source_url_count`),
+  `source_urls_list`, `affiliation_type_ids`/`has_affiliation`, and a 10-indicator `data_completeness_score`.
+- **Bridge (long) tables**, many rows per `facility_sk`: `facilities_specialties` (118,222),
+  `facilities_equipment` (60,075), `facilities_clinical_facts` (399,572).
+- `facilities_enrich_capability` (WS-6) **expanded** with +21 specialty/clinical flags, mined
+  `operating_theatre_count` / `doctor_count_text`, and `specialties_list`/`equipment_list` passthroughs.
+- `facilities_silver` (WS-0) **expanded** with array/social/affiliation/source-url passthroughs feeding the above.
+
+**New gold columns:** `facilities_gold` grew to **147 columns** (was 86). Additions span the new clinical
+flags, `specialties_list`/`equipment_list`, mined counts, the profile block (age/doctor/staffing/description/
+address), the clinical-facts roll-up, and the full trust block. Cross-workstream derived fields
+(`emergency_readiness_score`/`_tier`, `needs_outreach`, `is_digitally_active`, `needs_verification`) are retained.
+
+**Data dictionary:** `workspace.virtue_foundation_enriched.facilities_data_dictionary` materializes
+`column_name, ordinal_position, data_type, description` for every gold column from `information_schema`.
+Validation: **147 dictionary rows = 147 gold columns**, and **0 rows have a NULL/empty description** (every
+gold column carries a comment via `09b_gold_comments.sql`).
+
+**Raw → gold coverage:** of the **51** raw source columns, **41 are ENCODED** into silver/gold/bridge and
+**10 are intentionally DROPPED** → **coverage = 80.4%** (41/51). The full per-column ENCODED/DROPPED table
+lives in [`../sql/README.md`](../sql/README.md#raw--gold-coverage). Dropped columns and reasons:
+`source_types`, `source_ids` (scrape metadata) · `organization_type` (load filter, constant after) ·
+`acceptsVolunteers` (off-scope, near-empty) · `address_country`, `address_countryCode`, `countries`
+(constant India/IN) · `source` (scrape provenance label) · `coordinates` (redundant with typed
+latitude/longitude) · `cluster_id` (internal clustering id, no analytic meaning).
+
+### Extended layer refresh (clinical staff + description, bug fixes, dedup)
+
+A second pass added two more enrichment tables, one more bridge, four correctness fixes, and a dedup.
+
+**New enrichments (canonical grain, "surface uncertainty, never fabricate"):**
+- `facilities_enrich_staff` (`13_staff.sql`) — clinical-staff presence answering *"who is available?"*:
+  `named_doctor_count` / `has_named_doctors` (distinct `Dr. <Name>` mined from text), `has_department_lead`,
+  18 specialist-title flags (`has_cardiologist`, `has_oncologist`, `has_neurologist`, `has_nephrologist`,
+  `has_pediatrician`, `has_obgyn`, `has_orthopedic_surgeon`, `has_urologist`, `has_dermatologist`,
+  `has_ophthalmologist`, `has_psychiatrist`, `has_pulmonologist`, `has_gastroenterologist`, `has_radiologist`,
+  `has_pathologist`, `has_anesthesiologist`, `has_general_surgeon`, `has_physician`), `specialist_domain_count`,
+  `has_specialist_evidence`, and a `staff_evidence_source` provenance companion. Signals are INFERRED from
+  scraped free-text (`capability` + `procedure` + `description`); unknowns stay NULL.
+- `facilities_doctors` (bridge, **13,456** rows, one per facility × distinct mined doctor name).
+- `facilities_enrich_description` (`14_description.sql`) — mines the 100%-filled `description`:
+  `description_length` / `description_word_count` / `has_rich_description`, `ownership_sector` (+`_source`,
+  NULL when unknown — never guessed), `desc_founding_year` (clamped 1800–2026), `desc_has_opening_hours` /
+  `desc_opening_hours_raw`, `desc_accreditation_signal`, `desc_mentions_24x7`, `desc_bed_count` (clamped 1–4000).
+
+**Bug fixes (4) + dedup (1):**
+1. `04_freshness.sql` — **future-date clamp**: any `page_update_date` / `social_post_date` parsed *after* the
+   scrape anchor `2025-12-21` is forced to NULL (a page/post can't be updated after it was scraped); the
+   freshness tier/score now derive from clean dates.
+2. `08_quality.sql` — **`is_teaching_hospital` precision**: no longer trips on bare generic tokens; requires a
+   name-anchored college/teaching token or an explicit teaching/residency/recognition phrase (213 → 263, precise).
+3. `08_quality.sql` — **`is_medical_college_attached` precision**: requires the facility's own name to be a
+   medical college or explicit attachment/affiliation phrasing, removing ~197 staff-bio false positives like
+   "MBBS from <x> Medical College" (433 → 236).
+4. `06_capability.sql` — **`is_teaching`-adjacent cleanup**: the table's clinical/quality flags now defer to the
+   canonical tables, so no stale or contradictory flag leaks into gold.
+5. **Dedup** (`06_capability.sql`) — removed eight free-text clinical flags (`has_transplant`,
+   `has_robotic_surgery`, `has_chemotherapy`, `has_radiotherapy`, `is_jci_accredited`, `has_trauma_center`,
+   `has_telemedicine`, `has_ambulance`) plus two mined counts that **exactly duplicated**
+   `facilities_enrich_clinical_facts`, restoring a single source of truth for free-text clinical signals.
+
+**Final gold column count:** `facilities_gold` is now **176 columns** (147 → 176; +29 from the staff and
+description blocks plus refreshed cross-WS derived fields). The data dictionary was re-materialized
+(`15_data_dictionary.sql`): **176 dictionary rows = 176 gold columns, 0 NULL/empty descriptions**.
+
+**Coverage, two ways (refreshed):**
+- **Raw-column coverage = encoded / 51 = 41 / 51 = 80.4%.** The staff/description pass mines columns that were
+  already ENCODED (`capability`, `procedure`, `description`), so the raw count is unchanged — the new work
+  deepens extracted *information*, not the set of touched columns.
+- **Information coverage = encoded / (51 − non-informative) = 41 / 41 = 100.0%.** The 10 excluded columns each
+  carry no new facility fact (constant, the load filter, internal scrape metadata, or redundant with a typed
+  column already encoded): `source_types`, `source_ids` (scrape metadata) · `organization_type` (load filter,
+  constant after) · `acceptsVolunteers` (off-scope, near-empty) · `address_country`, `address_countryCode`,
+  `countries` (constant India/IN) · `source` (scrape provenance) · `coordinates` (redundant with typed
+  lat/long) · `cluster_id` (internal clustering id). Every information-bearing raw column is encoded.
