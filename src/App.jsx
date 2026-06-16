@@ -158,8 +158,15 @@ function App() {
       doctorId,
       rawText,
       tags: extractLocalTags(rawText),
+      promptTuning: buildPromptTuningState(rawText),
+      followUpAnswers: [],
       createdAt: new Date().toISOString()
     };
+    localStorage.setItem(PROFILE_KEY, JSON.stringify(nextProfile));
+    setProfile(nextProfile);
+  }
+
+  function updateProfile(nextProfile) {
     localStorage.setItem(PROFILE_KEY, JSON.stringify(nextProfile));
     setProfile(nextProfile);
   }
@@ -326,6 +333,7 @@ function App() {
           approveOutreach={approveOutreach}
           approveClinicTime={approveClinicTime}
           profile={profile}
+          onUpdateProfile={updateProfile}
         />
         <MapWorkspace
           activeView={activeView}
@@ -578,19 +586,59 @@ function SearchPanel({
   shortlist,
   toggleShortlist,
   addSchedule,
-  profile
+  profile,
+  onUpdateProfile
 }) {
   const [input, setInput] = useState("");
-  const [messages, setMessages] = useState([
-    {
-      role: "assistant",
-      text: `I’ll prioritize ${profile.tags.specialties.join(", ") || "your specialties"} and show the evidence behind each match. You can also say “update my profile” or “forget my Rajasthan preference” and I’ll adjust your context.`
-    }
-  ]);
+  const [messages, setMessages] = useState(() => buildInitialChatMessages(profile));
 
-  function submitSearch(query) {
+  function submitSearch(query, options = {}) {
     const nextQuery = query || input;
     if (!nextQuery.trim()) return;
+
+    const currentPromptTuning = profile.promptTuning || buildPromptTuningState(profile.rawText);
+    const pendingQuestions = currentPromptTuning.followUpQuestions || [];
+
+    if (pendingQuestions.length && !options.forceSearch && !hasExplicitSearchIntent(nextQuery)) {
+      if (isSkipIntent(nextQuery)) {
+        const nextProfile = {
+          ...profile,
+          promptTuning: {
+            ...currentPromptTuning,
+            followUpQuestions: [],
+            skippedSignals: currentPromptTuning.missingSignals,
+            updatedAt: new Date().toISOString()
+          },
+          updatedAt: new Date().toISOString()
+        };
+        onUpdateProfile(nextProfile);
+        setMessages((current) => [
+          ...current,
+          { role: "user", text: nextQuery.trim() },
+          {
+            role: "assistant",
+            text:
+              "No problem. I’ll keep matching clinics with the profile details I have and label weaker matches when important context is missing."
+          }
+        ]);
+        setInput("");
+        return;
+      }
+
+      const nextProfile = mergeFollowUpAnswer(profile, nextQuery.trim(), pendingQuestions);
+      onUpdateProfile(nextProfile);
+      setMessages((current) => [
+        ...current,
+        { role: "user", text: nextQuery.trim() },
+        {
+          role: "assistant",
+          text: buildProfileUpdateMessage(nextProfile)
+        }
+      ]);
+      setInput("");
+      return;
+    }
+
     setMessages((current) => [
       ...current,
       { role: "user", text: nextQuery.trim() },
@@ -613,7 +661,7 @@ function SearchPanel({
       </div>
       <div className="quickPromptRow">
         {quickPrompts.map((prompt) => (
-          <button key={prompt} onClick={() => submitSearch(prompt)}>
+          <button key={prompt} onClick={() => submitSearch(prompt, { forceSearch: true })}>
             {prompt}
           </button>
         ))}
@@ -1196,14 +1244,7 @@ function ShortlistPanel({
 }
 
 function extractLocalTags(rawText) {
-  const specialties = [
-    ["cardiology", /cardio|heart|hypertension/i],
-    ["critical care", /icu|critical|emergency/i],
-    ["diabetes", /diabetes|endocr/i],
-    ["general medicine", /general|physician|medicine/i]
-  ]
-    .filter(([, pattern]) => pattern.test(rawText))
-    .map(([label]) => label);
+  const specialties = detectLocalSpecialties(rawText);
 
   const regions = ["Gujarat", "Rajasthan", "Maharashtra", "rural"].filter((region) =>
     new RegExp(region, "i").test(rawText)
@@ -1214,6 +1255,209 @@ function extractLocalTags(rawText) {
     regions,
     experience: rawText.match(/(\d+)\s*(years|yrs)/i)?.[1] || ""
   };
+}
+
+function detectLocalSpecialties(rawText) {
+  return [
+    ["cardiology", /cardio|heart|hypertension/i],
+    ["critical care", /icu|critical|emergency/i],
+    ["diabetes", /diabetes|endocr/i],
+    ["general medicine", /general|physician|medicine/i]
+  ]
+    .filter(([, pattern]) => pattern.test(rawText))
+    .map(([label]) => label);
+}
+
+function buildPromptTuningState(rawText) {
+  const signals = extractPromptSignals(rawText);
+  const missingSignals = getMissingPromptSignals(signals);
+  const lowConfidenceSignals = getLowConfidencePromptSignals(rawText, signals);
+  const followUpQuestions = getFollowUpQuestions(missingSignals).slice(0, 3);
+  const qualityLevel = getProfileQualityLevel(signals, missingSignals, rawText);
+
+  return {
+    qualityLevel,
+    missingSignals,
+    lowConfidenceSignals,
+    extractedSignals: signals,
+    followUpQuestions,
+    updatedAt: new Date().toISOString()
+  };
+}
+
+function extractPromptSignals(rawText) {
+  const tags = extractLocalTags(rawText);
+  return {
+    specialties: detectLocalSpecialties(rawText),
+    regions: tags.regions,
+    experienceYears: tags.experience,
+    languages: extractMatches(rawText, [
+      ["English", /english/i],
+      ["Hindi", /hindi/i],
+      ["Gujarati", /gujarati/i],
+      ["Spanish", /spanish/i],
+      ["French", /french/i]
+    ]),
+    missionPurposes: extractMatches(rawText, [
+      ["volunteering", /volunteer|mission|camp|screening/i],
+      ["relocation", /relocat|moving|move to/i],
+      ["referral partnership", /referral|partnership|collaborat/i],
+      ["observation", /observership|observe|shadow/i]
+    ]),
+    availability: extractMatches(rawText, [
+      ["dated service window", /\b(january|february|march|april|may|june|july|august|september|october|november|december|mon|tue|wed|thu|fri|sat|sun|\d{4}-\d{2}-\d{2})\b/i],
+      ["recurring availability", /available|monthly|weekly|weekend|morning|afternoon|evening/i]
+    ]),
+    clinicTypes: extractMatches(rawText, [
+      ["hospital", /hospital/i],
+      ["community clinic", /community clinic/i],
+      ["NGO clinic", /ngo/i],
+      ["rural clinic", /rural/i],
+      ["specialty center", /specialty center|specialist center/i],
+      ["teaching hospital", /teaching/i]
+    ]),
+    credentials: extractMatches(rawText, [
+      ["credential context", /license|licensed|board|credential|fellowship|md|do|mbbs/i]
+    ])
+  };
+}
+
+function getMissingPromptSignals(signals) {
+  return [
+    !signals.specialties.length && "specialty",
+    !signals.missionPurposes.length && "mission_purpose",
+    !signals.availability.length && "availability",
+    !signals.languages.length && "languages",
+    !signals.clinicTypes.length && "clinic_type",
+    !signals.experienceYears && !signals.credentials.length && "experience_or_credentials"
+  ].filter(Boolean);
+}
+
+function getLowConfidencePromptSignals(rawText, signals) {
+  const lowConfidence = [];
+  if (rawText.trim().split(/\s+/).length < 18) lowConfidence.push("profile_detail");
+  if (!signals.regions.length) lowConfidence.push("destination_optional");
+  return lowConfidence;
+}
+
+function getProfileQualityLevel(signals, missingSignals, rawText) {
+  const hasSpecialty = signals.specialties.length > 0;
+  const hasMission = signals.missionPurposes.length > 0;
+  const practicalSignals = [
+    signals.languages.length,
+    signals.clinicTypes.length,
+    signals.availability.length,
+    signals.experienceYears,
+    signals.credentials.length
+  ].filter(Boolean).length;
+
+  if (hasSpecialty && hasMission && practicalSignals >= 1) return "high";
+  if (hasSpecialty && rawText.trim().split(/\s+/).length >= 8) return "medium";
+  if (missingSignals.length <= 2 && rawText.trim().split(/\s+/).length >= 16) return "medium";
+  return "low";
+}
+
+function getFollowUpQuestions(missingSignals) {
+  const questionBySignal = {
+    specialty: "What is your medical specialty or main clinical focus?",
+    mission_purpose:
+      "Are you looking for volunteering, relocation, referral partnerships, observation, or another type of clinic connection?",
+    availability: "When are you available for introductory clinic meetings, and what time zone should I use?",
+    languages: "What languages can you use comfortably in clinical or professional settings?",
+    clinic_type: "Do you prefer hospitals, community clinics, NGO clinics, rural clinics, specialty centers, or teaching hospitals?",
+    experience_or_credentials: "What experience, credentials, or license context should clinics know about?"
+  };
+
+  return missingSignals.map((signal) => questionBySignal[signal]).filter(Boolean);
+}
+
+function buildInitialChatMessages(profile) {
+  const promptTuning = profile.promptTuning || buildPromptTuningState(profile.rawText);
+  const specialtyText = profile.tags.specialties.join(", ") || "your specialties";
+  const messages = [
+    {
+      role: "assistant",
+      text: `I’ll prioritize ${specialtyText} and show the evidence behind each match. You can also say “update my profile” or “forget my Rajasthan preference” and I’ll adjust your context.`
+    }
+  ];
+
+  if (promptTuning.followUpQuestions?.length) {
+    messages.push({
+      role: "assistant",
+      text: `To tune clinic matching, I need a little more context. ${promptTuning.followUpQuestions.join(" ")}`
+    });
+  } else {
+    messages.push({
+      role: "assistant",
+      text: "Your profile has enough matching context to start. Destination can stay open until you want to narrow the search."
+    });
+  }
+
+  return messages;
+}
+
+function mergeFollowUpAnswer(profile, answer, questions) {
+  const nextRawText = mergeTranscript(profile.rawText, `Follow-up answer: ${answer}`);
+  const nextTags = mergeTags(profile.tags, extractLocalTags(nextRawText));
+  const nextPromptTuning = buildPromptTuningState(nextRawText);
+  const followUpAnswers = [
+    ...(profile.followUpAnswers || []),
+    {
+      id: crypto.randomUUID(),
+      questions,
+      answer,
+      createdAt: new Date().toISOString()
+    }
+  ];
+
+  return {
+    ...profile,
+    rawText: nextRawText,
+    tags: nextTags,
+    promptTuning: nextPromptTuning,
+    followUpAnswers,
+    updatedAt: new Date().toISOString()
+  };
+}
+
+function mergeTags(existingTags, nextTags) {
+  return {
+    specialties: uniqueValues([...(existingTags.specialties || []), ...(nextTags.specialties || [])]),
+    regions: uniqueValues([...(existingTags.regions || []), ...(nextTags.regions || [])]),
+    experience: nextTags.experience || existingTags.experience || ""
+  };
+}
+
+function buildProfileUpdateMessage(profile) {
+  const promptTuning = profile.promptTuning || buildPromptTuningState(profile.rawText);
+  const learned = [
+    profile.tags.specialties.length && `specialty: ${profile.tags.specialties.join(", ")}`,
+    profile.tags.regions.length && `region: ${profile.tags.regions.join(", ")}`,
+    profile.tags.experience && `experience: ${profile.tags.experience} years`
+  ].filter(Boolean);
+  const learnedText = learned.length ? `I updated ${learned.join("; ")}.` : "I updated your profile context.";
+
+  if (promptTuning.followUpQuestions.length) {
+    return `${learnedText} One more useful detail for stronger matches: ${promptTuning.followUpQuestions[0]}`;
+  }
+
+  return `${learnedText} Your profile now has enough context for stronger clinic matching. Destination is still optional until you want to narrow results.`;
+}
+
+function extractMatches(rawText, definitions) {
+  return definitions.filter(([, pattern]) => pattern.test(rawText)).map(([label]) => label);
+}
+
+function uniqueValues(values) {
+  return [...new Set(values.filter(Boolean))];
+}
+
+function isSkipIntent(text) {
+  return /\b(skip|later|not now|continue|no thanks)\b/i.test(text);
+}
+
+function hasExplicitSearchIntent(text) {
+  return /\b(find|search|show|recommend|rank|match)\b/i.test(text);
 }
 
 function buildOutreachMessage(facility, profile) {
