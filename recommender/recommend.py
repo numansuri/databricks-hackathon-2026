@@ -380,7 +380,14 @@ def recommend(profile: Profile, gap=None, facilities=None, supply=None):
         # name (see _candidate_clinics), never which DISTRICT outranks another.
         scored.append((impact_index, impact_index, g))
 
-    scored.sort(key=lambda t: (-t[0], -t[2]["unmet_demand"], t[2]["district"]))
+    # LOCKED sort (integration-spec D12 / §5.2): impact_index DESC, then
+    # pop_weighted_demand DESC (population-reach tie-break), then unmet_demand
+    # DESC, then district name for full determinism. priority_tier is a displayed
+    # badge, never a sort key (an earlier tier tilt inverted impact -- EVAL #9).
+    scored.sort(key=lambda t: (-t[0],                                    # impact_index DESC
+                               -(t[2].get("pop_weighted_demand") or 0),  # pop-weighted demand DESC (tie-break)
+                               -t[2]["unmet_demand"],                     # unmet_demand DESC
+                               t[2]["district"]))                        # deterministic final key
     ranked = [(overall_rank, final, impact_index, g)
               for overall_rank, (final, impact_index, g) in enumerate(scored, 1)]
     top_n = max(profile.top_k, 0)
@@ -529,10 +536,218 @@ def _candidate_clinics(district, state, specialty, setting, facilities, supply, 
 
     cands.sort(key=_host_strength, reverse=True)
     return [{
+        "facility_id": f["facility_id"],      # NEW: join key into facilities_slice.json (integration-spec §5)
         "facility": f["name"], "type": f["type"],
         "ownership": f["ownership"],          # 'public' | 'private' | 'unknown' (never guessed)
         "tier": f["tier"] or "unknown", "beds": f["beds"], "doctors": f["doctors"],
     } for f in cands[:limit]]
+
+# ---------------------------------------------------------------------------
+# Slice emitter -- builds the React app's bundled public/gold/*.json
+# ---------------------------------------------------------------------------
+# The app does ZERO ranking; it filters these pre-ranked artifacts (integration
+# -spec §5). recommend.py is the single ranking brain. These verified counts are
+# frozen and asserted so a refreshed gold layer cannot silently change the demo.
+TOTAL_SPECIALTIES_EXPECTED = 110
+DEMAND_BEARING_EXPECTED = 17
+THIN_EXPECTED = 4
+NO_SIGNAL_EXPECTED = 93
+
+# The §4 canonical facility object field order (the live export JSON uses these
+# exact camelCase keys; the §4.1 SQL aliases produce them).
+FACILITY_FIELDS = [
+    "id", "name", "type", "city", "state", "lat", "lng", "coordsAreApproximate",
+    "email", "phone", "website", "facebook", "specialtiesList", "ownership",
+    "isPublic", "complexityTier", "hasSpecialistEvidence", "specialistDomainCount",
+    "district", "stateNorm", "districtKey",
+]
+
+def _district_key(state, district):
+    """The deterministic Title-Case join key used in BOTH slices: 'State::District'.
+    Verified identical between gold_demand_supply_gap_v2 (state_ut_norm/
+    district_name_norm) and gold_facility_enriched (nfhs_state_ut_norm/
+    nfhs_district_name_norm) -- do NOT lowercase (would break the merge)."""
+    return f"{state}::{district}"
+
+def _all_canonical_specialties(path=None):
+    """Every distinct specialty_canonical in the gap table -- INCLUDING the 93
+    no-signal specialties that load_gap() drops (their ranking columns are null)."""
+    path = path or os.path.join(DATA_DIR, "gold_demand_supply_gap_v2.csv")
+    seen = set()
+    with open(path, newline="") as fh:
+        for r in csv.DictReader(fh):
+            sc = (r.get("specialty_canonical") or "").strip()
+            if sc:
+                seen.add(sc)
+    return sorted(seen)
+
+def _slice_district_row(rec, gap_row):
+    """Map a recommend() recommendation into the demand_supply_slice district shape.
+    pop_weighted_demand + is_thin_specialty come from the matched gap row."""
+    return {
+        "districtKey": _district_key(rec["state"], rec["district"]),
+        "state_ut_norm": rec["state"],
+        "district_name_norm": rec["district"],
+        "rank": rec["rank"],
+        "impact_index": rec["impact_index"],
+        "priority_tier": rec["priority_tier"],
+        "pop_weighted_demand": (round(gap_row["pop_weighted_demand"], 2)
+                                if gap_row and gap_row.get("pop_weighted_demand") is not None
+                                else None),
+        "unmet_demand": rec["unmet_demand"],
+        "specialty_absent": rec["specialty_absent"],
+        "is_thin_specialty": bool(gap_row["is_thin_specialty"]) if gap_row else False,
+        "score_basis": rec["score_basis"],
+        "driving_needs": rec["driving_needs"],
+        "candidate_clinics": rec["candidate_clinics"],   # carry facility_id (Change 1)
+    }
+
+def emit_slice(out_dir="public/gold", top_n=20, facilities_export=None):
+    """Build the bundled JSON the React app reads (integration-spec §5.5).
+
+    Writes (into out_dir): demand_supply_slice.json, specialty_aliases.json, and --
+    when a live facility export JSON is present -- facilities_slice.json +
+    facilities_seed.json. Asserts the frozen 110/17/4/93 vocabulary counts and
+    fails loudly on drift. Pure stdlib; the live facility join lives in the export
+    (the §4.1 SQL), not here."""
+    gap = load_gap()
+    facilities = load_facilities()
+    supply = load_supply_map()
+    all_specs = _all_canonical_specialties()
+
+    # gap lookup for per-district pop_weighted_demand + is_thin_specialty.
+    gap_lookup = {(g["specialty"], g["state"], g["district"]): g for g in gap}
+
+    demand_bearing = {}        # specialty -> [district rows]
+    thin_specialties = set()
+    for sc in all_specs:
+        res = recommend(Profile(specialty=sc, location_mode="open", top_k=top_n),
+                        gap, facilities, supply)
+        if res["status"] == "ok" and res["recommendations"]:
+            if res.get("is_thin_specialty"):
+                thin_specialties.add(sc)
+            demand_bearing[sc] = [
+                _slice_district_row(rec, gap_lookup.get((sc, rec["state"], rec["district"])))
+                for rec in res["recommendations"]
+            ]
+    no_signal = sorted(sc for sc in all_specs if sc not in demand_bearing)
+
+    # --- frozen-count assertions (Codex Q5): refuse to emit a drifted slice ----
+    def _assert(label, got, want):
+        if got != want:
+            raise SystemExit(
+                f"[emit-slice] FATAL vocabulary drift: {label} = {got}, expected {want}. "
+                "The gold layer changed; re-verify before regenerating the demo slice.")
+    _assert("total specialties", len(all_specs), TOTAL_SPECIALTIES_EXPECTED)
+    _assert("demand-bearing specialties", len(demand_bearing), DEMAND_BEARING_EXPECTED)
+    _assert("thin specialties", len(thin_specialties), THIN_EXPECTED)
+    _assert("no-signal specialties", len(no_signal), NO_SIGNAL_EXPECTED)
+
+    # district keys that must appear in facilities_slice.json
+    needed_keys = sorted({d["districtKey"]
+                          for rows in demand_bearing.values() for d in rows})
+    # facility_ids the recommender named as candidate hosts (must resolve in slice)
+    candidate_ids = {c["facility_id"]
+                     for rows in demand_bearing.values() for d in rows
+                     for c in d["candidate_clinics"]}
+
+    os.makedirs(out_dir, exist_ok=True)
+
+    demand_slice = {
+        "generatedAtNote": "offline build artifact (recommend.py --emit-slice); not a runtime artifact",
+        "meta": {
+            "totalSpecialties": len(all_specs),
+            "demandBearingSpecialties": len(demand_bearing),
+            "thinSpecialties": len(thin_specialties),
+            "noSignalSpecialties": len(no_signal),
+            "topNPerSpecialty": top_n,
+        },
+        "demandBearing": demand_bearing,
+        "noSignal": no_signal,
+    }
+    _write_json(os.path.join(out_dir, "demand_supply_slice.json"), demand_slice)
+
+    # ONE shared alias map (integration-spec §5.5): the picker + recommender
+    # resolve identically. Emitted from recommend.py's SPECIALTY_ALIASES (the
+    # single source); src/specialties.js inlines a compatible superset.
+    _write_json(os.path.join(out_dir, "specialty_aliases.json"),
+                dict(sorted(SPECIALTY_ALIASES.items())))
+
+    # Build helper: the exact district keys the facility export must cover.
+    _write_json(os.path.join(DATA_DIR, "_needed_district_keys.json"), needed_keys)
+
+    export_path = facilities_export or os.path.join(DATA_DIR, "facilities_export.json")
+    # Two-phase bootstrap: the FIRST run (before the live export exists) writes the
+    # demand slice + aliases + the district keys the export must cover, then exits
+    # NON-ZERO with guidance -- it never prints a misleading "OK" without facilities
+    # (Codex). Generate the export for _needed_district_keys.json, then re-run.
+    if not os.path.exists(export_path):
+        print(f"[emit-slice] wrote demand_supply_slice.json + specialty_aliases.json | "
+              f"needed districts -> recommender/data/_needed_district_keys.json ({len(needed_keys)} keys)")
+        raise SystemExit(
+            f"[emit-slice] facilities_export.json MISSING at {export_path}. Run the live "
+            "§4.1 facility export covering recommender/data/_needed_district_keys.json, "
+            "then re-run --emit-slice to build facilities_slice.json + facilities_seed.json.")
+
+    with open(export_path) as fh:
+        fac_rows = json.load(fh)
+    needed = set(needed_keys)
+    # facilities_slice = CREDIBLE-HOST facilities in the bundled districts, deduped
+    # by id. We apply the SAME credible_host_filter recommend.py uses for
+    # candidate_clinics so the app's "host clinics" never surface a single-specialty
+    # dental/eye/lab/diagnostic facility, and so every candidate_clinic id resolves
+    # in the slice. This also keeps the committed JSON well under the 1 MB budget.
+    by_id = {}
+    for r in fac_rows:
+        if r.get("districtKey") not in needed:
+            continue
+        if not credible_host_filter({"name": r.get("name"), "type": r.get("type"),
+                                     "is_public": bool(r.get("isPublic"))}):
+            continue
+        by_id[r["id"]] = {k: r.get(k) for k in FACILITY_FIELDS}
+    slice_rows = list(by_id.values())
+
+    # HARD integrity gate (Codex): every facility_id recommend() named as a candidate
+    # host MUST resolve in facilities_slice, or the recommend->outreach->schedule join
+    # ships broken. Fail loudly instead of summarizing.
+    missing = sorted(candidate_ids - set(by_id.keys()))
+    if missing:
+        raise SystemExit(
+            f"[emit-slice] FATAL: {len(missing)} candidate-host facility_id(s) absent from "
+            f"facilities_slice -- the recommend->outreach join is broken. e.g. {missing[:5]}. "
+            "Re-export facilities covering EVERY district in _needed_district_keys.json.")
+
+    _write_json(os.path.join(out_dir, "facilities_slice.json"), slice_rows)
+    # seed: a small non-empty first page for synchronous React init (§7.1).
+    # Prefer recommender-named hosts so the bootstrap rows are demo-relevant.
+    seed_ids, seed = set(), []
+    for rows in demand_bearing.values():
+        for d in rows:
+            for c in d["candidate_clinics"]:
+                fid = c["facility_id"]
+                if fid in by_id and fid not in seed_ids:
+                    seed_ids.add(fid); seed.append(by_id[fid])
+            if len(seed) >= 20:
+                break
+        if len(seed) >= 20:
+            break
+    if not seed:
+        seed = slice_rows[:20]
+    _write_json(os.path.join(out_dir, "facilities_seed.json"), seed[:20])
+    fac_count = len(slice_rows)
+
+    print("[emit-slice] OK  "
+          f"specialties={len(all_specs)} demand={len(demand_bearing)} "
+          f"thin={len(thin_specialties)} no_signal={len(no_signal)} | "
+          f"districts={len(needed_keys)} candidate_hosts={len(candidate_ids)} | "
+          f"facilities_slice={fac_count} rows ({len(seed[:20])} seed); candidate-host misses: 0")
+    print(f"[emit-slice] out_dir={out_dir} export={export_path}")
+    return {"needed_keys": needed_keys, "candidate_ids": sorted(candidate_ids),
+            "facilities": fac_count}
+
+def _write_json(path, obj):
+    with open(path, "w") as fh:
+        json.dump(obj, fh, ensure_ascii=False, separators=(",", ":"))
 
 # ---------------------------------------------------------------------------
 # Presentation + CLI
@@ -630,6 +845,15 @@ def _build_argparser():
     ap.add_argument("--json", action="store_true", help="emit JSON instead of text")
     ap.add_argument("--selftest", action="store_true",
                     help="run built-in CLI/data regression checks and exit")
+    ap.add_argument("--emit-slice", action="store_true",
+                    help="build the React app's bundled public/gold/*.json and exit")
+    ap.add_argument("--out", default="public/gold",
+                    help="output dir for --emit-slice (default public/gold)")
+    ap.add_argument("--top-n", type=int, default=20,
+                    help="districts per demand-bearing specialty in the slice (default 20)")
+    ap.add_argument("--facilities-export", default=None,
+                    help="path to the live §4.1 facility export JSON "
+                         "(default recommender/data/facilities_export.json)")
     return ap
 
 def _profile_from_args(a):
@@ -768,6 +992,49 @@ def _selftest():
         check(f"fixed mode with empty states ({' '.join(argv[-2:])!r}) -> no_feasible_district",
               res["status"] == "no_feasible_district")
 
+    # 10. NEW locked tie-break (integration-spec D12 / §5.2): on a TRUE impact tie
+    #     (identical unmet_demand -> identical impact_index), the higher
+    #     pop_weighted_demand ranks first. Use a synthetic 2-district gap so the tie
+    #     is exact (real rows rarely tie on the raw float; the output impact_index is
+    #     rounded, so equal-rounded != true-tie). Without the tie-break the old sort
+    #     fell to district name ('Alpha' < 'Bravo'), so this distinguishes new vs old.
+    def _grow(district, pwd):
+        return {"district": district, "state": "Testland", "specialty": "cardiology",
+                "unmet_demand": 1.0, "pop_weighted_demand": pwd, "n_facilities": 0,
+                "n_public": 0, "specialty_absent": True, "is_thin_specialty": False,
+                "score_basis": "demand vs supply", "priority_tier": "critical",
+                "driving_needs": []}
+    synth = [_grow("Alpha", 50.0), _grow("Bravo", 99.0)]   # equal impact; Bravo more reach
+    res = recommend(Profile(specialty="cardiology", location_mode="open", top_k=5),
+                    synth, [], set())
+    order = [r["district"] for r in res["recommendations"]]
+    check("equal-impact tie-break: higher pop_weighted_demand ranks first (Bravo>Alpha)",
+          order[:2] == ["Bravo", "Alpha"])
+
+    # 11. emit-slice vocabulary: all 110 canonical specialties enumerated, exactly
+    #     17 demand-bearing produce a ranking, 4 thin, 93 no-signal (frozen counts).
+    all_specs = _all_canonical_specialties()
+    demand_n, thin_n = 0, 0
+    for sc in all_specs:
+        r = recommend(Profile(specialty=sc, location_mode="open", top_k=1),
+                      gap, facilities, supply)
+        if r["status"] == "ok":
+            demand_n += 1
+            if r.get("is_thin_specialty"):
+                thin_n += 1
+    check("emit-slice vocabulary: 110 total / 17 demand-bearing / 4 thin / 93 no-signal",
+          len(all_specs) == TOTAL_SPECIALTIES_EXPECTED
+          and demand_n == DEMAND_BEARING_EXPECTED
+          and thin_n == THIN_EXPECTED
+          and (len(all_specs) - demand_n) == NO_SIGNAL_EXPECTED)
+
+    # 12. _candidate_clinics now emits facility_id (the join key into the slice).
+    res = recommend(Profile(specialty="pediatrics", location_mode="open", top_k=20),
+                    gap, facilities, supply)
+    clinics = [c for r in res["recommendations"] for c in r["candidate_clinics"]]
+    check("candidate_clinics carry a facility_id join key",
+          len(clinics) > 0 and all(c.get("facility_id") for c in clinics))
+
     print(f"\n{'ALL GREEN' if not fails else str(len(fails)) + ' FAILED'}: selftest")
     return len(fails)
 
@@ -777,6 +1044,10 @@ def main(argv=None):
 
     if a.selftest:
         sys.exit(1 if _selftest() else 0)
+
+    if a.emit_slice:
+        emit_slice(out_dir=a.out, top_n=a.top_n, facilities_export=a.facilities_export)
+        return
 
     gap, facilities, supply = load_gap(), load_facilities(), load_supply_map()
 

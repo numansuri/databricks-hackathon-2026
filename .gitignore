@@ -3,3 +3,8 @@ dist/
 .env
 .env.local
 .env.*.local
+
+# Recommender build intermediates (offline `--emit-slice` inputs; not committed).
+# The committed artifacts are the bundled public/gold/*.json the app imports.
+recommender/data/facilities_export.json
+recommender/data/_needed_district_keys.json
