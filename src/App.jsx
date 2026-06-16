@@ -1650,6 +1650,7 @@ function MapWorkspace({
         <ScheduleRibbon schedule={schedule} facilities={facilities} />
       ) : (
         <EvidenceDrawer
+          key={selectedFacility.id}
           facility={selectedFacility}
           shortlisted={shortlist.includes(selectedFacility.id)}
           onToggleShortlist={() => toggleShortlist(selectedFacility.id)}
@@ -1750,17 +1751,19 @@ function GoogleMapShell({ facilities: visibleFacilities, selectedFacility, onSel
         });
         markerRef.current = visibleFacilities.map((facility) => {
           const isSelected = facility.id === selectedFacility.id;
+          const content = makeGoogleMarkerContent(facility.tier, isSelected, facility.name);
           const marker = new window.google.maps.marker.AdvancedMarkerElement({
             position: { lat: facility.lat, lng: facility.lng },
             map,
             title: facility.name,
-            content: makeGoogleMarkerContent(facility.tier, isSelected),
+            content,
             zIndex: isSelected ? 20 : 10
           });
-          marker.addEventListener("gmp-click", () => {
+          bindAdvancedMarkerClick(marker, content, () => {
             onSelect(facility.id);
             infoWindowRef.current.setContent(renderMapInfo(facility));
             infoWindowRef.current.open({ anchor: marker, map });
+            map.panTo({ lat: facility.lat, lng: facility.lng });
           });
           return marker;
         });
@@ -1876,16 +1879,18 @@ function GoogleMapShell({ facilities: visibleFacilities, selectedFacility, onSel
         visibleFacilities.forEach((facility) => bounds.extend({ lat: facility.lat, lng: facility.lng }));
 
         placeMarkerRef.current = normalizedPlaces.map((place) => {
+          const content = makePlaceMarkerContent(place.name);
           const marker = new window.google.maps.marker.AdvancedMarkerElement({
             position: place.location,
             map,
             title: place.name,
-            content: makePlaceMarkerContent(),
+            content,
             zIndex: 30
           });
-          marker.addEventListener("gmp-click", () => {
+          bindAdvancedMarkerClick(marker, content, () => {
             infoWindowRef.current.setContent(renderPlaceInfo(place));
             infoWindowRef.current.open({ anchor: marker, map });
+            map.panTo(place.location);
           });
           return { id: place.id, marker };
         });
@@ -2740,16 +2745,43 @@ function loadGoogleMaps(apiKey) {
   return window.__referralGoogleMapsPromise;
 }
 
-function makeGoogleMarkerContent(tier, selected) {
+function bindAdvancedMarkerClick(marker, content, onClick) {
+  let lastRunAt = 0;
+  const runClick = (event) => {
+    event?.stopPropagation?.();
+    event?.preventDefault?.();
+    const now = Date.now();
+    if (now - lastRunAt < 80) return;
+    lastRunAt = now;
+    onClick();
+  };
+
+  marker.addListener?.("click", runClick);
+  marker.addEventListener?.("gmp-click", runClick);
+  content?.addEventListener?.("click", runClick);
+  content?.addEventListener?.("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      runClick(event);
+    }
+  });
+}
+
+function makeGoogleMarkerContent(tier, selected, label) {
   const marker = document.createElement("div");
   marker.className = `googleMarkerPin ${tier} ${selected ? "selected" : ""}`;
+  marker.setAttribute("role", "button");
+  marker.setAttribute("tabindex", "0");
+  marker.setAttribute("aria-label", label ? `Open ${label}` : "Open facility details");
   marker.innerHTML = `<span></span>`;
   return marker;
 }
 
-function makePlaceMarkerContent() {
+function makePlaceMarkerContent(label) {
   const marker = document.createElement("div");
   marker.className = "googlePlacePin";
+  marker.setAttribute("role", "button");
+  marker.setAttribute("tabindex", "0");
+  marker.setAttribute("aria-label", label ? `Open Google result ${label}` : "Open Google result");
   marker.innerHTML = `<span></span>`;
   return marker;
 }

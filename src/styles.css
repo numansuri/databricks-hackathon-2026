@@ -1161,7 +1161,12 @@ textarea {
   place-items: center;
   border: 3px solid #fff;
   border-radius: 999px;
+  cursor: pointer;
+  outline: none;
   box-shadow: 0 12px 24px rgba(23, 32, 28, 0.28);
+  transition:
+    transform 150ms ease,
+    box-shadow 150ms ease;
 }
 
 .googleMarkerPin span {
@@ -1189,6 +1194,14 @@ textarea {
   border-width: 4px;
 }
 
+.googleMarkerPin:hover,
+.googleMarkerPin:focus-visible {
+  transform: scale(1.14);
+  box-shadow:
+    0 14px 28px rgba(23, 32, 28, 0.32),
+    0 0 0 5px color-mix(in srgb, var(--teal) 20%, transparent);
+}
+
 .googlePlacePin {
   width: 30px;
   height: 30px;
@@ -1197,7 +1210,12 @@ textarea {
   border: 3px solid #fff;
   border-radius: 999px;
   background: var(--indigo);
+  cursor: pointer;
+  outline: none;
   box-shadow: 0 14px 26px rgba(23, 32, 28, 0.3);
+  transition:
+    transform 150ms ease,
+    box-shadow 150ms ease;
 }
 
 .googlePlacePin span {
@@ -1206,6 +1224,14 @@ textarea {
   border-radius: 999px;
   background: #fff;
   box-shadow: 0 0 0 4px color-mix(in srgb, #fff 42%, transparent);
+}
+
+.googlePlacePin:hover,
+.googlePlacePin:focus-visible {
+  transform: scale(1.12);
+  box-shadow:
+    0 15px 30px rgba(23, 32, 28, 0.34),
+    0 0 0 5px color-mix(in srgb, var(--indigo) 22%, transparent);
 }
 
 .gmInfo {
