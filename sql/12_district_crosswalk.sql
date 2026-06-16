@@ -203,7 +203,7 @@ SELECT * FROM VALUES
 -- WHERE p.pd IS NULL;
 
 -- ---------------------------------------------------------------------------
--- 12d  pincode_nfhs view: pincode_gold -> NFHS health row.
+-- 12d  pincode_nfhs view: gold_pincode -> NFHS health row.
 --      Tier 1 (exact-normalized) resolves 597; Tier 2 (crosswalk) catches the 101.
 --      COALESCE makes Tier 2 a pure fallback. State is in the key on both tiers.
 --      nf is deduped to ONE row per (normalized district, normalized state) so the
@@ -244,7 +244,7 @@ SELECT
   CASE WHEN nf.district_name IS NULL THEN NULL
        ELSE COALESCE(x.confidence, 'high') END  AS nfhs_match_confidence,
   nf.* EXCEPT (nfhs_nd, nfhs_ns)                                    -- all NFHS health indicator columns (all NULL when unmatched)
-FROM workspace.virtue_foundation_enriched.pincode_gold g
+FROM workspace.virtue_foundation_enriched.gold_pincode g
 LEFT JOIN xwalk x
   ON  workspace.virtue_foundation_enriched.normalize_district(g.district_majority) = x.postal_nd
   AND workspace.virtue_foundation_enriched.normalize_state(g.state_majority)       = x.postal_ns
