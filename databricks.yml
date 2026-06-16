@@ -14,6 +14,11 @@ resources:
             scope: referral-copilot
             key: google-maps-api-key
             permission: READ
+        - name: outreach_model
+          description: Foundation Model serving endpoint used to draft outreach messages.
+          serving_endpoint:
+            name: databricks-llama-4-maverick
+            permission: CAN_QUERY
       config:
         command:
           - npm
@@ -22,6 +27,10 @@ resources:
         env:
           - name: VITE_GOOGLE_MAPS_API_KEY
             value_from: google_maps_api_key
+          - name: LLM_PROVIDER
+            value: databricks
+          - name: OUTREACH_MODEL
+            value_from: outreach_model
 
 targets:
   dev:
