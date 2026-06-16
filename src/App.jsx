@@ -32,10 +32,11 @@ import {
   UserRound,
   X
 } from "lucide-react";
+import seedFacilities from "../public/gold/facilities_seed.json";
 
 const APP_NAME = "Shiftlink";
 const APP_MARK = "SL";
-const APP_TAGLINE = "Hospital exchange";
+const APP_TAGLINE = "Place specialists where the need is highest.";
 const THEME_KEY = "shiftlinkTheme";
 const USER_DATABASE_KEY = "referralCopilotUsers";
 const SESSION_USER_KEY = "referralCopilotSessionUserId";
@@ -45,77 +46,16 @@ const SAMPLE_PROFILE_TEXT =
 const DEMO_PROFILE_TRANSCRIPT =
   "I am a cardiologist with 10 years of ICU experience. I can support emergency cardiac referrals, hypertension care, and volunteer cardiac screening camps in Gujarat and Rajasthan.";
 
-const facilities = [
-  {
-    id: "shaurya",
-    name: "Shaurya Heart & Critical Care",
-    type: "Multispecialty hospital",
-    city: "Ahmedabad",
-    state: "Gujarat",
-    distanceKm: 4.2,
-    tier: "strong",
-    score: 4.6,
-    lat: 23.0225,
-    lng: 72.5714,
-    phone: "+91 98251 47300",
-    email: "referrals@shauryaheart.in",
-    match: "Cardiology, ICU, emergency procedure support",
-    evidence: [
-      { field: "capability", text: "Critical care, cardiology, cardiac emergency stabilization" },
-      { field: "procedure", text: "Angiography support, post-operative cardiac monitoring" },
-      { field: "equipment", text: "ICU beds, ventilator support, cardiac monitors" }
-    ],
-    flags: ["Pincode-verified coordinates"],
-    map: { x: 56, y: 42 }
-  },
-  {
-    id: "city",
-    name: "City Medical Institute",
-    type: "Referral center",
-    city: "Gandhinagar",
-    state: "Gujarat",
-    distanceKm: 18.7,
-    tier: "partial",
-    score: 2.8,
-    lat: 23.2156,
-    lng: 72.6369,
-    phone: "+91 79401 88820",
-    email: "care@citymedical.in",
-    match: "Internal medicine, diagnostics, cardiology claims",
-    evidence: [
-      { field: "specialties", text: "Internal medicine, cardiology outpatient care" },
-      { field: "description", text: "Handles cardiac symptoms and routine diagnostics" }
-    ],
-    flags: ["Capability appears in description only"],
-    map: { x: 66, y: 28 }
-  },
-  {
-    id: "metro",
-    name: "Metro Community Clinic",
-    type: "Clinic",
-    city: "Sanand",
-    state: "Gujarat",
-    distanceKm: 31.4,
-    tier: "weak",
-    score: 1.4,
-    lat: 22.9924,
-    lng: 72.3817,
-    phone: "+91 27172 22440",
-    email: "",
-    match: "Basic triage, low-volume cardiac evidence",
-    evidence: [
-      { field: "description", text: "Mentions heart and diabetes screening camps" }
-    ],
-    flags: ["Single source only", "Low physician count for hospital-level service"],
-    map: { x: 36, y: 56 }
-  }
-];
-
-const quickPrompts = [
-  "Emergency cardiac care near Ahmedabad",
-  "Volunteer cardiology camp in rural Rajasthan",
-  "Facilities with ICU equipment and reliable phone contacts"
-];
+// Facilities are NOT hardcoded (integration-spec §7.1, D25). They come from the
+// bundled recommender slice: DoctorApp seeds a deduped-by-id `facilities` state
+// array from facilities_seed.json and MERGES a district's host clinics into it as
+// the doctor expands them in Recommend, so outreach/scheduler can find any shown
+// facility by id. Every facility object is the canonical §4 shape.
+function dedupeById(rows) {
+  const byId = new Map();
+  for (const row of rows || []) if (row && row.id) byId.set(row.id, row);
+  return Array.from(byId.values());
+}
 
 const weekDays = [
   "Mon, Jun 15",
@@ -124,12 +64,6 @@ const weekDays = [
   "Thu, Jun 18",
   "Fri, Jun 19"
 ];
-
-const tierMeta = {
-  strong: { label: "Strong", className: "tierStrong" },
-  partial: { label: "Partial", className: "tierPartial" },
-  weak: { label: "Weak", className: "tierWeak" }
-};
 
 const requestStatusMeta = {
   planned: { label: "Planned", className: "statusPlanned" },
@@ -172,67 +106,6 @@ function getScheduleKey(userId) {
 function getDisplayName(user) {
   if (!user) return "";
   return user.name || user.email?.split("@")[0] || "User";
-}
-
-function getFacilityName(facilityId) {
-  return facilities.find((facility) => facility.id === facilityId)?.name || "Unknown facility";
-}
-
-function getRequestDirection(request) {
-  return request.direction || "doctor_to_hospital";
-}
-
-function normalizeOptionalUrl(url) {
-  const trimmed = url.trim();
-  if (!trimmed) return "";
-  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
-}
-
-function getHospitalProfile(user) {
-  return (
-    user.hospitalProfile || {
-      name: getDisplayName(user),
-      streetAddress: "",
-      phone: "",
-      facebookUrl: ""
-    }
-  );
-}
-
-function getHospitalFacility(user) {
-  if (!user) return facilities[0];
-  const legacyFacility = facilities.find((item) => item.id === user.facilityId);
-  if (legacyFacility && !user.hospitalProfile) return legacyFacility;
-
-  const profile = getHospitalProfile(user);
-  const evidence = [
-    { field: "Hospital-entered address", text: profile.streetAddress || "Not provided" },
-    { field: "Hospital-entered phone", text: profile.phone || "Not provided" }
-  ];
-  if (profile.facebookUrl) {
-    evidence.push({ field: "Facebook page", text: profile.facebookUrl });
-  }
-
-  return {
-    id: user.facilityId || `hospital-${user.id}`,
-    name: profile.name || getDisplayName(user),
-    type: "Hospital profile",
-    city: profile.streetAddress || "Local profile",
-    state: "",
-    distanceKm: 0,
-    tier: "partial",
-    score: 2,
-    lat: 23.0225,
-    lng: 72.5714,
-    phone: profile.phone,
-    email: user.email,
-    facebookUrl: profile.facebookUrl,
-    addressLine: profile.streetAddress,
-    match: "Hospital-entered account profile",
-    evidence,
-    flags: ["Self-reported hospital profile"],
-    map: { x: 50, y: 50 }
-  };
 }
 
 function createDoctorProfile(userId, rawText) {
@@ -309,7 +182,6 @@ function App() {
   const [users, setUsers] = useState(() => readJson(USER_DATABASE_KEY, []));
   const [sessionUserId, setSessionUserId] = useState(() => localStorage.getItem(SESSION_USER_KEY) || "");
   const activeUser = users.find((user) => user.id === sessionUserId) || null;
-  const [requests, setRequests] = useState(() => readJson(SCHEDULE_REQUESTS_KEY, []));
   const [theme, setTheme] = useState(() => localStorage.getItem(THEME_KEY) || "light");
 
   useEffect(() => {
@@ -328,39 +200,26 @@ function App() {
     setUsers(nextUsers);
   }
 
-  function persistRequests(nextRequests) {
-    saveJson(SCHEDULE_REQUESTS_KEY, nextRequests);
-    setRequests(nextRequests);
-  }
-
-  function signUp({ name, email, password, role, profileText, hospitalStreetAddress, hospitalPhone, hospitalFacebookUrl }) {
+  // Shiftlink is doctor-only (integration-spec D2: the hospital role + two-way
+  // scheduling-request flow are cut). signUp always creates a volunteer specialist.
+  function signUp({ name, email, password, profileText }) {
     const normalizedEmail = normalizeEmail(email);
     if (users.some((user) => user.email === normalizedEmail)) {
       return { ok: false, message: "An account already exists for that email." };
     }
     const userId = crypto.randomUUID();
     const trimmedProfileText = profileText?.trim() || "";
-    const hospitalProfile =
-      role === "hospital"
-        ? {
-            name: name.trim(),
-            streetAddress: hospitalStreetAddress.trim(),
-            phone: hospitalPhone.trim(),
-            facebookUrl: normalizeOptionalUrl(hospitalFacebookUrl)
-          }
-        : null;
     const user = {
       id: userId,
       name: name.trim(),
       email: normalizedEmail,
       password,
-      role,
-      facilityId: role === "hospital" ? `hospital-${userId}` : "",
-      ...(hospitalProfile ? { hospitalProfile } : {}),
+      role: "doctor",
+      facilityId: "",
       createdAt: new Date().toISOString()
     };
     persistUsers([...users, user]);
-    if (role === "doctor" && trimmedProfileText) {
+    if (trimmedProfileText) {
       saveJson(getProfileKey(user.id), createDoctorProfile(user.id, trimmedProfileText));
     }
     localStorage.setItem(SESSION_USER_KEY, user.id);
@@ -384,87 +243,13 @@ function App() {
     setSessionUserId("");
   }
 
-  function updateRequestStatus(requestId, status) {
-    persistRequests(
-      requests.map((request) =>
-        request.id === requestId
-          ? { ...request, status, reviewedAt: new Date().toISOString(), reviewedBy: activeUser?.id || "" }
-          : request
-      )
-    );
-  }
-
-  function createScheduleRequest(entry) {
-    const facility = facilities.find((item) => item.id === entry.facilityId);
-    const request = {
-      id: crypto.randomUUID(),
-      direction: "doctor_to_hospital",
-      doctorId: activeUser.id,
-      doctorName: getDisplayName(activeUser),
-      doctorEmail: activeUser.email,
-      facilityId: entry.facilityId,
-      facilityName: facility?.name || "Unknown facility",
-      visitDate: entry.date,
-      visitTime: entry.time,
-      purpose: entry.purpose,
-      status: "pending",
-      createdAt: new Date().toISOString()
-    };
-    persistRequests([request, ...requests]);
-    return request;
-  }
-
-  function createHospitalDoctorRequest({ doctorId, date, time, purpose }) {
-    const doctor = users.find((item) => item.id === doctorId);
-    const facility = getHospitalFacility(activeUser);
-    if (!doctor || !facility) {
-      return { ok: false, message: "Select a doctor before sending the request." };
-    }
-    const request = {
-      id: crypto.randomUUID(),
-      direction: "hospital_to_doctor",
-      requestedBy: activeUser.id,
-      requestedByName: getDisplayName(activeUser),
-      doctorId: doctor.id,
-      doctorName: getDisplayName(doctor),
-      doctorEmail: doctor.email,
-      facilityId: facility.id,
-      facilityName: facility.name,
-      visitDate: date,
-      visitTime: time,
-      purpose,
-      status: "pending",
-      createdAt: new Date().toISOString()
-    };
-    persistRequests([request, ...requests]);
-    return { ok: true, request };
-  }
-
   if (!activeUser) {
     return <AuthGate onLogin={login} onSignUp={signUp} theme={theme} onToggleTheme={toggleTheme} />;
-  }
-
-  if (activeUser.role === "hospital") {
-    return (
-      <HospitalDashboard
-        user={activeUser}
-        doctors={users.filter((user) => user.role === "doctor")}
-        requests={requests}
-        onCreateDoctorRequest={createHospitalDoctorRequest}
-        onUpdateRequestStatus={updateRequestStatus}
-        onLogout={logout}
-        theme={theme}
-        onToggleTheme={toggleTheme}
-      />
-    );
   }
 
   return (
     <DoctorApp
       user={activeUser}
-      requests={requests}
-      onCreateScheduleRequest={createScheduleRequest}
-      onUpdateRequestStatus={updateRequestStatus}
       onLogout={logout}
       theme={theme}
       onToggleTheme={toggleTheme}
@@ -472,7 +257,7 @@ function App() {
   );
 }
 
-function DoctorApp({ user, requests, onCreateScheduleRequest, onUpdateRequestStatus, onLogout, theme, onToggleTheme }) {
+function DoctorApp({ user, onLogout, theme, onToggleTheme }) {
   const profileKey = getProfileKey(user.id);
   const outreachKey = getOutreachKey(user.id);
   const scheduleKey = getScheduleKey(user.id);
@@ -481,29 +266,23 @@ function DoctorApp({ user, requests, onCreateScheduleRequest, onUpdateRequestSta
     return saved ? JSON.parse(saved) : null;
   });
   const [activeView, setActiveView] = useState("search");
-  const [selectedFacilityId, setSelectedFacilityId] = useState(facilities[0].id);
-  const [shortlist, setShortlist] = useState([facilities[0].id]);
-  const [schedule, setSchedule] = useState(() => readJson(scheduleKey, [
-    {
-      id: "visit-1",
-      facilityId: facilities[0].id,
-      date: "2026-06-16",
-      time: "10:30",
-      purpose: "Cardiology referral discussion",
-      status: "confirmed",
-      approvalStatus: "doctor_approved",
-      calendarStatus: "calendar_event_created",
-      source: "demo"
-    }
-  ]));
+  // ONE deduped-by-id facilities state, seeded from the bundled recommender slice
+  // (never the old fake clinics). Recommend MERGES district hosts into this; every
+  // facilities[0] read is guarded so an empty array can never crash init (§7.1).
+  const [facilities, setFacilities] = useState(() => dedupeById(seedFacilities));
+  const [selectedFacilityId, setSelectedFacilityId] = useState(facilities[0]?.id ?? "");
+  const [shortlist, setShortlist] = useState(facilities[0] ? [facilities[0].id] : []);
+  const [schedule, setSchedule] = useState(() => readJson(scheduleKey, []));
   const [outreachRequests, setOutreachRequests] = useState(() => readJson(outreachKey, []));
   const draftingFacilitiesRef = useRef(new Set());
 
-  const selectedFacility = facilities.find((facility) => facility.id === selectedFacilityId) || facilities[0];
-  const doctorRequests = requests.filter((request) => request.doctorId === user.id);
-  const incomingHospitalRequests = doctorRequests.filter(
-    (request) => getRequestDirection(request) === "hospital_to_doctor"
-  );
+  // MERGE (never replace) canonical facility objects, deduped by id, so a clinic
+  // shown in Recommend is always resolvable by outreach/scheduler (§7.1).
+  function mergeFacilities(incoming) {
+    setFacilities((current) => dedupeById([...current, ...(incoming || [])]));
+  }
+
+  const selectedFacility = facilities.find((facility) => facility.id === selectedFacilityId) || facilities[0] || null;
 
   // Accepts either the next array or an updater (current => next). All callers go
   // through the functional form so concurrent async writes/edits always merge
@@ -541,23 +320,21 @@ function DoctorApp({ user, requests, onCreateScheduleRequest, onUpdateRequestSta
     );
   }
 
+  // Local schedule add (no two-way request — the hospital flow is cut). The
+  // scheduler's confirmProposals is the primary clinic-reply -> confirmed path.
   function addSchedule(entry, options = {}) {
-    const shouldCreateRequest = options.createRequest !== false;
-    const request = shouldCreateRequest ? onCreateScheduleRequest(entry) : null;
     const nextEntry = {
       ...entry,
       id: crypto.randomUUID(),
-      requestId: request?.id || options.requestId || entry.requestId || "",
-      status: options.status || entry.status || (request ? "pending" : "planned"),
-      approvalStatus:
-        options.approvalStatus || entry.approvalStatus || (request ? "hospital_approval_required" : "doctor_approved"),
-      calendarStatus:
-        options.calendarStatus || entry.calendarStatus || (request ? "pending_hospital_approval" : "calendar_event_created"),
+      requestId: options.requestId || entry.requestId || "",
+      status: options.status || entry.status || "planned",
+      approvalStatus: options.approvalStatus || entry.approvalStatus || "doctor_approved",
+      calendarStatus: options.calendarStatus || entry.calendarStatus || "calendar_event_created",
       source: options.source || entry.source || "manual"
     };
     updateSchedule((current) => [nextEntry, ...current]);
     setActiveView("schedule");
-    return request || nextEntry;
+    return nextEntry;
   }
 
   async function createOutreachDraft(facilityId) {
@@ -714,35 +491,6 @@ function DoctorApp({ user, requests, onCreateScheduleRequest, onUpdateRequestSta
     );
   }
 
-  function acceptHospitalRequest(request) {
-    onUpdateRequestStatus(request.id, "approved");
-    updateSchedule((current) => {
-      if (current.some((entry) => entry.requestId === request.id)) return current;
-      return [
-        {
-          id: crypto.randomUUID(),
-          requestId: request.id,
-          facilityId: request.facilityId,
-          facilityName: request.facilityName,
-          date: request.visitDate,
-          time: request.visitTime,
-          purpose: request.purpose,
-          status: "approved",
-          approvalStatus: "doctor_approved",
-          calendarStatus: "calendar_event_created",
-          source: "hospital_request"
-        },
-        ...current
-      ];
-    });
-    setActiveView("schedule");
-  }
-
-  function denyHospitalRequest(request) {
-    onUpdateRequestStatus(request.id, "denied");
-    setActiveView("schedule");
-  }
-
   function removeSchedule(id) {
     updateSchedule((current) => current.filter((entry) => entry.id !== id));
   }
@@ -757,7 +505,7 @@ function DoctorApp({ user, requests, onCreateScheduleRequest, onUpdateRequestSta
         activeView={activeView}
         setActiveView={setActiveView}
         shortlistCount={shortlist.length}
-        approvalCount={getApprovalCount(outreachRequests, incomingHospitalRequests)}
+        approvalCount={getApprovalCount(outreachRequests)}
         profile={profile}
         onResetProfile={resetProfile}
         user={user}
@@ -778,10 +526,7 @@ function DoctorApp({ user, requests, onCreateScheduleRequest, onUpdateRequestSta
           addSchedule={addSchedule}
           removeSchedule={removeSchedule}
           profile={profile}
-          requests={doctorRequests}
-          incomingHospitalRequests={incomingHospitalRequests}
-          onAcceptHospitalRequest={acceptHospitalRequest}
-          onDenyHospitalRequest={denyHospitalRequest}
+          mergeFacilities={mergeFacilities}
           outreachRequests={outreachRequests}
           createOutreachDraft={createOutreachDraft}
           updateOutreachDraft={updateOutreachDraft}
@@ -792,12 +537,11 @@ function DoctorApp({ user, requests, onCreateScheduleRequest, onUpdateRequestSta
           activeView={activeView}
           facilities={facilities}
           selectedFacility={selectedFacility}
-          setSelectedFacilityId={setSelectedFacilityId}
           shortlist={shortlist}
           toggleShortlist={toggleShortlist}
           schedule={schedule}
-          addSchedule={addSchedule}
           createOutreachDraft={createOutreachDraft}
+          onBuildWeek={() => setActiveView("schedule")}
         />
       </main>
     </div>
@@ -806,14 +550,10 @@ function DoctorApp({ user, requests, onCreateScheduleRequest, onUpdateRequestSta
 
 function AuthGate({ onLogin, onSignUp, theme, onToggleTheme }) {
   const [mode, setMode] = useState("signup");
-  const [role, setRole] = useState("doctor");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [profileText, setProfileText] = useState("");
-  const [hospitalStreetAddress, setHospitalStreetAddress] = useState("");
-  const [hospitalPhone, setHospitalPhone] = useState("");
-  const [hospitalFacebookUrl, setHospitalFacebookUrl] = useState("");
   const [error, setError] = useState("");
   const {
     recording: profileRecording,
@@ -829,41 +569,24 @@ function AuthGate({ onLogin, onSignUp, theme, onToggleTheme }) {
     const result =
       mode === "login"
         ? onLogin({ email, password })
-        : onSignUp({
-            name,
-            email,
-            password,
-            role,
-            profileText,
-            hospitalStreetAddress,
-            hospitalPhone,
-            hospitalFacebookUrl
-          });
+        : onSignUp({ name, email, password, profileText });
     if (!result.ok) {
       setError(result.message);
     }
   }
 
-  const doctorProfileReady = role !== "doctor" || profileText.trim().length > 20;
-  const hospitalProfileReady =
-    role !== "hospital" || (hospitalStreetAddress.trim().length > 5 && hospitalPhone.trim().length > 6);
+  const doctorProfileReady = profileText.trim().length > 20;
   const canSubmit =
     mode === "login"
       ? email.trim() && password
-      : name.trim().length > 1 &&
-        email.trim() &&
-        password.length >= 4 &&
-        doctorProfileReady &&
-        hospitalProfileReady;
+      : name.trim().length > 1 && email.trim() && password.length >= 4 && doctorProfileReady;
 
   return (
     <main className="authShell">
       <section className="authPanel">
         <div className="authIntro">
           <div className="brandLockup">
-            <span className="brandMark">
-              {APP_MARK}
-            </span>
+            <span className="brandMark">{APP_MARK}</span>
             <div>
               <h1>{APP_NAME}</h1>
               <p>{APP_TAGLINE}</p>
@@ -872,23 +595,12 @@ function AuthGate({ onLogin, onSignUp, theme, onToggleTheme }) {
           </div>
           <div>
             <p className="eyebrow">Sign in</p>
-            <h2>One exchange for coverage, referrals, and hospital handoffs.</h2>
+            <h2>Place specialists where the need is highest.</h2>
             <p>
-              Doctors create their clinical context during sign-up, then search, shortlist, and request visits.
-              Hospitals review inbound requests and invite doctors from the local user table.
+              Tell us your specialty. Shiftlink ranks the districts with the highest unmet need,
+              names real candidate host clinics, drafts your outreach, and builds your visit week
+              from the clinics that reply.
             </p>
-          </div>
-          <div className="roleSummary">
-            <div>
-              <UserRound size={18} />
-              <strong>Doctor</strong>
-              <span>Referral chat, map, shortlist, schedule builder.</span>
-            </div>
-            <div>
-              <Hospital size={18} />
-              <strong>Hospital</strong>
-              <span>Request queue with approve and deny actions.</span>
-            </div>
           </div>
         </div>
         <form className="authForm" onSubmit={submit}>
@@ -911,37 +623,14 @@ function AuthGate({ onLogin, onSignUp, theme, onToggleTheme }) {
             </button>
           </div>
           {mode === "signup" && (
-            <>
-              <label>
-                Account type
-                <div className="roleToggle">
-                  <button
-                    type="button"
-                    className={role === "doctor" ? "active" : ""}
-                    onClick={() => setRole("doctor")}
-                  >
-                    <UserRound size={16} />
-                    Doctor
-                  </button>
-                  <button
-                    type="button"
-                    className={role === "hospital" ? "active" : ""}
-                    onClick={() => setRole("hospital")}
-                  >
-                    <Hospital size={16} />
-                    Hospital
-                  </button>
-                </div>
-              </label>
-              <label>
-                {role === "hospital" ? "Hospital name" : "Name"}
-                <input
-                  value={name}
-                  onChange={(event) => setName(event.target.value)}
-                  placeholder={role === "hospital" ? "Shaurya Heart & Critical Care" : "Dr. Anika Rao"}
-                />
-              </label>
-            </>
+            <label>
+              Name
+              <input
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                placeholder="Dr. Anika Rao"
+              />
+            </label>
           )}
           <label>
             Email
@@ -961,10 +650,10 @@ function AuthGate({ onLogin, onSignUp, theme, onToggleTheme }) {
               placeholder="Prototype password"
             />
           </label>
-          {mode === "signup" && role === "doctor" && (
+          {mode === "signup" && (
             <div className="doctorContextInline">
               <div className="contextLabelRow">
-                <span>Doctor context</span>
+                <span>Your specialty &amp; context</span>
                 <span>{doctorProfileReady ? "Ready" : "Required"}</span>
               </div>
               <div className="textareaFrame">
@@ -972,7 +661,7 @@ function AuthGate({ onLogin, onSignUp, theme, onToggleTheme }) {
                   aria-label="Doctor context"
                   value={profileText}
                   onChange={(event) => setProfileText(event.target.value)}
-                  placeholder="I am a cardiologist with ICU experience. I usually refer patients for cardiac emergencies, prefer Gujarat and Rajasthan, and can volunteer for rural screening camps..."
+                  placeholder="I am a pediatrician who can volunteer monthly for rural screening camps. Do not enter patient-identifying information."
                 />
                 <div className="transcriptionDock">
                   <button
@@ -993,42 +682,13 @@ function AuthGate({ onLogin, onSignUp, theme, onToggleTheme }) {
               </button>
             </div>
           )}
-          {mode === "signup" && role === "hospital" && (
-            <div className="hospitalProfileFields">
-              <label>
-                Street address
-                <input
-                  value={hospitalStreetAddress}
-                  onChange={(event) => setHospitalStreetAddress(event.target.value)}
-                  placeholder="15 Civil Hospital Road, Ahmedabad, Gujarat"
-                />
-              </label>
-              <label>
-                Phone number
-                <input
-                  type="tel"
-                  value={hospitalPhone}
-                  onChange={(event) => setHospitalPhone(event.target.value)}
-                  placeholder="+91 98251 47300"
-                />
-              </label>
-              <label>
-                Facebook page
-                <input
-                  value={hospitalFacebookUrl}
-                  onChange={(event) => setHospitalFacebookUrl(event.target.value)}
-                  placeholder="facebook.com/your-hospital"
-                />
-              </label>
-            </div>
-          )}
           {error && <p className="formError">{error}</p>}
           <button type="submit" className="primaryButton" disabled={!canSubmit}>
             {mode === "login" ? "Log in" : "Create account"}
             <ChevronRight size={18} />
           </button>
           <p className="authFootnote">
-            Prototype accounts are stored in this browser only. Backend user storage is the next step.
+            Prototype accounts are stored in this browser only. You are self-reported and unverified.
           </p>
         </form>
       </section>
@@ -1234,76 +894,33 @@ function LeftPanel(props) {
   return <SearchPanel {...props} />;
 }
 
+// Recommend tab (interim list; the Recommend-tab feature work layers the impact-
+// ranked district cards on top). The faked "coverage assistant" chat is cut
+// (integration-spec §2) — the deterministic recommender list IS the answer.
 function SearchPanel({
   facilities,
   selectedFacilityId,
   setSelectedFacilityId,
   shortlist,
   toggleShortlist,
-  addSchedule,
+  createOutreachDraft,
   profile
 }) {
-  const [input, setInput] = useState("");
-  const [messages, setMessages] = useState([
-    {
-      role: "assistant",
-      text: `I’ll prioritize ${profile.tags.specialties.join(", ") || "your specialties"} and show which hospital requests are worth accepting, countering, or holding. You can also say “update my profile” or “forget my Rajasthan preference” and I’ll adjust your context.`
-    }
-  ]);
-
-  function submitSearch(query) {
-    const nextQuery = query || input;
-    if (!nextQuery.trim()) return;
-    setMessages((current) => [
-      ...current,
-      { role: "user", text: nextQuery.trim() },
-      {
-        role: "assistant",
-        text: "I found three facilities with cardiac evidence near Ahmedabad. Strong matches include corroborated capability, procedure, and equipment fields."
-      }
-    ]);
-    setInput("");
-  }
-
+  const specialtyLabel =
+    profile?.primarySpecialtyLabel || profile?.tags?.specialties?.[0] || "your specialty";
   return (
     <aside className="sidePanel">
       <div className="panelHeader">
         <div>
-          <p className="eyebrow">Doctor exchange</p>
-          <h2>Coverage assistant</h2>
+          <p className="eyebrow">Recommend</p>
+          <h2>Host clinics for {specialtyLabel}</h2>
         </div>
-        <span className="countBadge">{facilities.length} matches</span>
+        <span className="countBadge">{facilities.length}</span>
       </div>
-      <div className="quickPromptRow">
-        {quickPrompts.map((prompt) => (
-          <button key={prompt} onClick={() => submitSearch(prompt)}>
-            {prompt}
-          </button>
-        ))}
-      </div>
-      <div className="chatLog">
-        {messages.map((message, index) => (
-          <div key={`${message.role}-${index}`} className={`message ${message.role}`}>
-            {message.text}
-          </div>
-        ))}
-      </div>
-      <form
-        className="chatInput"
-        onSubmit={(event) => {
-          event.preventDefault();
-          submitSearch();
-        }}
-      >
-        <input
-          value={input}
-          onChange={(event) => setInput(event.target.value)}
-          placeholder="Find requests worth accepting"
-        />
-        <button title="Send search" type="submit">
-          <Send size={18} />
-        </button>
-      </form>
+      <p className="panelHint">
+        Real candidate host clinics where you can volunteer. Pick one to draft a warm,
+        channel-aware outreach message.
+      </p>
       <div className="resultStack">
         {facilities.map((facility) => (
           <FacilityCard
@@ -1313,14 +930,7 @@ function SearchPanel({
             shortlisted={shortlist.includes(facility.id)}
             onSelect={() => setSelectedFacilityId(facility.id)}
             onToggleShortlist={() => toggleShortlist(facility.id)}
-            onSchedule={() =>
-              addSchedule({
-                facilityId: facility.id,
-                date: "2026-06-17",
-                time: "14:00",
-                purpose: "Referral call"
-              })
-            }
+            onSchedule={() => createOutreachDraft(facility.id)}
           />
         ))}
       </div>
@@ -1328,267 +938,111 @@ function SearchPanel({
   );
 }
 
+// Host-clinic card on the canonical facility object (integration-spec §7.5): no
+// trust-tier, no score, no distance. Shows complexity, ownership, and the
+// specialist-evidence line; "Draft outreach" is the primary action.
 function FacilityCard({ facility, selected, shortlisted, onSelect, onToggleShortlist, onSchedule }) {
-  const meta = tierMeta[facility.tier];
+  const ownershipLabel =
+    facility.ownership === "public" ? "Public" : facility.ownership === "private" ? "Private" : "Ownership unknown";
+  const domains = facility.specialistDomainCount || 0;
+  const evidenceLine = facility.hasSpecialistEvidence
+    ? `${domains} specialist domain${domains === 1 ? "" : "s"} on record`
+    : "No specialist evidence on record yet";
   return (
     <article className={`facilityCard ${selected ? "selected" : ""}`} onClick={onSelect}>
       <div className="facilityTopline">
-        <span className={`tierDot ${meta.className}`} />
         <div>
           <h3>{facility.name}</h3>
-          <p>{facility.type}</p>
+          <p>{[facility.type, facility.city, facility.state].filter(Boolean).join(" · ")}</p>
         </div>
-        <span className={`tierBadge ${meta.className}`}>{meta.label}</span>
+        {facility.complexityTier ? <span className="tierBadge">{facility.complexityTier}</span> : null}
       </div>
       <div className="facilityMeta">
         <span>
-          <MapPin size={14} />
-          {facility.distanceKm} km
+          <Hospital size={14} />
+          {ownershipLabel}
+          {facility.isPublic ? " · public health" : ""}
         </span>
         <span>
           <ShieldCheck size={14} />
-          {facility.score.toFixed(1)}
+          {evidenceLine}
         </span>
       </div>
-      <p className="facilityMatch">{facility.match}</p>
+      {facility.specialtiesList?.length ? (
+        <p className="facilityMatch">{facility.specialtiesList.slice(0, 5).map(humanizeSpecialtyLabel).join(" · ")}</p>
+      ) : null}
       <div className="cardActions">
         <button type="button" onClick={(event) => runButtonAction(event, onToggleShortlist)}>
           {shortlisted ? <Check size={15} /> : <Plus size={15} />}
           {shortlisted ? "Saved" : "Save"}
         </button>
         <button type="button" onClick={(event) => runButtonAction(event, onSchedule)}>
-          <CalendarDays size={15} />
-          Plan
+          <Send size={15} />
+          Draft outreach
         </button>
       </div>
     </article>
   );
 }
 
+// The right-pane workspace (Google Maps cut, D3). The "Build my week" button (was
+// the dead "Optimize" map control) opens the scheduler. The Recommend/Schedule
+// feature work fills in the per-view detail; this is the lean container.
 function MapWorkspace({
   activeView,
   facilities,
   selectedFacility,
-  setSelectedFacilityId,
   shortlist,
   toggleShortlist,
   schedule,
-  addSchedule,
-  createOutreachDraft
+  createOutreachDraft,
+  onBuildWeek
 }) {
-  const visibleFacilities = useMemo(() => {
-    if (activeView === "shortlist") {
-      return facilities.filter((facility) => shortlist.includes(facility.id));
-    }
-    if (activeView === "schedule") {
-      return facilities.filter((facility) => schedule.some((entry) => entry.facilityId === facility.id));
-    }
-    return facilities;
-  }, [activeView, facilities, schedule, shortlist]);
-
   return (
     <section className="mapWorkspace">
-      <GoogleMapShell
-        facilities={visibleFacilities.length ? visibleFacilities : facilities}
-        selectedFacility={selectedFacility}
-        onSelect={setSelectedFacilityId}
-      />
       <div className="mapToolbar">
         <div>
-          <p className="eyebrow">{activeView === "schedule" ? "Route view" : "District context"}</p>
+          <p className="eyebrow">{activeView === "schedule" ? "Your week" : "District context"}</p>
           <h2>
             {activeView === "schedule"
-              ? "Confirmed visits and proposed counters"
-              : "Hospital demand near Ahmedabad"}
+              ? "Confirmed visits and proposed slots"
+              : "Where your specialty closes the biggest gap"}
           </h2>
         </div>
-        <button>
-          <Navigation size={17} />
-          Optimize
+        <button type="button" onClick={onBuildWeek}>
+          <Sparkles size={17} />
+          Build my week
         </button>
       </div>
       {activeView === "schedule" ? (
         <ScheduleRibbon schedule={schedule} facilities={facilities} />
+      ) : selectedFacility ? (
+        <div className="contextCard">
+          <p className="eyebrow">{selectedFacility.type || "Host clinic"}</p>
+          <h3>{selectedFacility.name}</h3>
+          <p>{[selectedFacility.city, selectedFacility.state].filter(Boolean).join(", ")}</p>
+          {selectedFacility.specialtiesList?.length ? (
+            <p className="facilityMatch">{selectedFacility.specialtiesList.slice(0, 6).map(humanizeSpecialtyLabel).join(" · ")}</p>
+          ) : null}
+          <div className="cardActions">
+            <button type="button" onClick={() => createOutreachDraft(selectedFacility.id)}>
+              <Send size={15} /> Draft outreach
+            </button>
+            <button type="button" onClick={() => toggleShortlist(selectedFacility.id)}>
+              {shortlist.includes(selectedFacility.id) ? <Check size={15} /> : <Plus size={15} />}
+              {shortlist.includes(selectedFacility.id) ? "Saved" : "Save"}
+            </button>
+          </div>
+        </div>
       ) : (
-        <EvidenceDrawer
-          facility={selectedFacility}
-          shortlisted={shortlist.includes(selectedFacility.id)}
-          onToggleShortlist={() => toggleShortlist(selectedFacility.id)}
-          onSchedule={() =>
-            addSchedule({
-              facilityId: selectedFacility.id,
-              date: "2026-06-18",
-              time: "11:00",
-              purpose: "Facility outreach"
-            })
-          }
-          onDraftOutreach={() => createOutreachDraft(selectedFacility.id)}
-        />
+        <div className="contextCard">
+          <p>Pick a district and a host clinic in Recommend to see its details here.</p>
+        </div>
       )}
     </section>
   );
 }
 
-function GoogleMapShell({ facilities: visibleFacilities, selectedFacility, onSelect }) {
-  const mapRef = useRef(null);
-  const instanceRef = useRef(null);
-  const markerRef = useRef([]);
-  const infoWindowRef = useRef(null);
-  const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
-  const mapId = import.meta.env.VITE_GOOGLE_MAP_ID || "DEMO_MAP_ID";
-
-  useEffect(() => {
-    if (!apiKey || !mapRef.current) return;
-    let cancelled = false;
-
-    loadGoogleMaps(apiKey).then(() => {
-      if (cancelled || !mapRef.current) return;
-      if (!instanceRef.current) {
-        instanceRef.current = new window.google.maps.Map(mapRef.current, {
-          center: { lat: selectedFacility.lat, lng: selectedFacility.lng },
-          zoom: 10,
-          disableDefaultUI: true,
-          zoomControl: true,
-          mapTypeControl: false,
-          fullscreenControl: false,
-          streetViewControl: false,
-          mapId
-        });
-      }
-      if (!infoWindowRef.current) {
-        infoWindowRef.current = new window.google.maps.InfoWindow();
-      }
-      const map = instanceRef.current;
-      const bounds = new window.google.maps.LatLngBounds();
-      visibleFacilities.forEach((facility) => bounds.extend({ lat: facility.lat, lng: facility.lng }));
-      if (visibleFacilities.length > 1) {
-        map.fitBounds(bounds, 88);
-      } else {
-        map.setCenter({ lat: selectedFacility.lat, lng: selectedFacility.lng });
-        map.setZoom(11);
-      }
-      markerRef.current.forEach((marker) => {
-        marker.map = null;
-      });
-      markerRef.current = visibleFacilities.map((facility) => {
-        const isSelected = facility.id === selectedFacility.id;
-        const marker = new window.google.maps.marker.AdvancedMarkerElement({
-          position: { lat: facility.lat, lng: facility.lng },
-          map,
-          title: facility.name,
-          content: makeGoogleMarkerContent(facility.tier, isSelected),
-          zIndex: isSelected ? 20 : 10
-        });
-        marker.addEventListener("gmp-click", () => {
-          onSelect(facility.id);
-          infoWindowRef.current.setContent(renderMapInfo(facility));
-          infoWindowRef.current.open({ anchor: marker, map });
-        });
-        return marker;
-      });
-      map.panTo({ lat: selectedFacility.lat, lng: selectedFacility.lng });
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [apiKey, mapId, onSelect, selectedFacility.lat, selectedFacility.lng, visibleFacilities]);
-
-  if (apiKey) {
-    return (
-      <>
-        <div className="googleMap" ref={mapRef} />
-        <div className="mapProviderBadge">Google Maps · pseudo facility data</div>
-      </>
-    );
-  }
-
-  return (
-    <div className="fallbackMap" aria-label="Map preview">
-      <div className="mapKeyHint">Add VITE_GOOGLE_MAPS_API_KEY to use Google Maps</div>
-      <div className="arterial roadA" />
-      <div className="arterial roadB" />
-      <div className="arterial roadC" />
-      <div className="riverLine" />
-      {visibleFacilities.map((facility) => (
-        <button
-          key={facility.id}
-          className={`mapMarker ${facility.tier} ${facility.id === selectedFacility.id ? "selected" : ""}`}
-          style={{ left: `${facility.map.x}%`, top: `${facility.map.y}%` }}
-          onClick={() => onSelect(facility.id)}
-          title={facility.name}
-        >
-          <Hospital size={18} />
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function EvidenceDrawer({ facility, shortlisted, onToggleShortlist, onSchedule, onDraftOutreach }) {
-  const meta = tierMeta[facility.tier];
-
-  return (
-    <aside className="evidenceDrawer">
-      <div className="drawerHeader">
-        <div>
-          <span className={`tierBadge ${meta.className}`}>{meta.label} evidence</span>
-          <h2>{facility.name}</h2>
-          <p>
-            {facility.city}, {facility.state} · {facility.distanceKm} km
-          </p>
-        </div>
-        <button title="Copy details">
-          <Copy size={16} />
-        </button>
-      </div>
-      <div className="contactGrid">
-        <a href={`tel:${facility.phone}`}>
-          <Phone size={15} />
-          {facility.phone}
-        </a>
-        {facility.email ? (
-          <a href={`mailto:${facility.email}`}>
-            <Mail size={15} />
-            {facility.email}
-          </a>
-        ) : (
-          <span>
-            <Mail size={15} />
-            No email listed
-          </span>
-        )}
-      </div>
-      <div className="evidenceList">
-        {facility.evidence.map((item) => (
-          <div key={`${facility.id}-${item.field}`}>
-            <span>{item.field}</span>
-            <p>{item.text}</p>
-          </div>
-        ))}
-      </div>
-      <div className="flagList">
-        {facility.flags.map((flag) => (
-          <span key={flag}>{flag}</span>
-        ))}
-      </div>
-      <div className="drawerActions">
-        <button onClick={onToggleShortlist}>
-          {shortlisted ? <Check size={17} /> : <Plus size={17} />}
-          {shortlisted ? "Saved" : "Shortlist"}
-        </button>
-        <button onClick={onSchedule}>
-          <CalendarDays size={17} />
-          Request
-        </button>
-        <button onClick={onDraftOutreach}>
-          <Mail size={17} />
-          Draft
-        </button>
-      </div>
-    </aside>
-  );
-}
 
 function OutreachPanel({
   facilities,
@@ -1600,7 +1054,7 @@ function OutreachPanel({
   approveOutreach,
   approveClinicTime
 }) {
-  const selectedFacility = facilities.find((facility) => facility.id === selectedFacilityId) || facilities[0];
+  const selectedFacility = facilities.find((facility) => facility.id === selectedFacilityId) || facilities[0] || null;
 
   return (
     <aside className="sidePanel">
@@ -1821,253 +1275,6 @@ function OutreachPanel({
   );
 }
 
-function HospitalDashboard({
-  user,
-  doctors,
-  requests,
-  onCreateDoctorRequest,
-  onUpdateRequestStatus,
-  onLogout,
-  theme,
-  onToggleTheme
-}) {
-  const facility = getHospitalFacility(user);
-  const facilityRequests = requests.filter((request) => request.facilityId === facility.id);
-  const incomingRequests = facilityRequests.filter((request) => getRequestDirection(request) === "doctor_to_hospital");
-  const outgoingRequests = facilityRequests.filter((request) => getRequestDirection(request) === "hospital_to_doctor");
-  const pendingRequests = incomingRequests.filter((request) => request.status === "pending");
-  const approvedRequests = incomingRequests.filter((request) => request.status === "approved");
-  const deniedRequests = incomingRequests.filter((request) => request.status === "denied");
-  const openNegotiations = pendingRequests.length + outgoingRequests.filter((request) => request.status === "pending").length;
-  const meta = tierMeta[facility.tier];
-
-  return (
-    <div className="hospitalShell exchangeShell">
-      <header className="topBar hospitalTopBar">
-        <div className="brandLockup compact">
-          <span className="brandMark">
-            {APP_MARK}
-          </span>
-          <div>
-            <h1>{APP_NAME}</h1>
-            <p>{facility.name}</p>
-          </div>
-        </div>
-        <div className="hospitalIdentity">
-          <span className={`tierBadge ${meta.className}`}>{meta.label} evidence</span>
-          <span>{openNegotiations} open negotiations</span>
-        </div>
-        <div className="accountCluster">
-          <ThemeToggle theme={theme} onToggleTheme={onToggleTheme} />
-          <button className="logoutButton" onClick={onLogout}>
-            <LogOut size={16} />
-            Log out
-          </button>
-        </div>
-      </header>
-      <main className="hospitalWorkspace">
-        <section className="requestPanel">
-          <div className="panelHeader">
-            <div>
-              <p className="eyebrow">Hospital exchange</p>
-              <h2>Request queue</h2>
-            </div>
-            <span className="countBadge">{pendingRequests.length} pending</span>
-          </div>
-          <div className="requestStats">
-            <div>
-              <span>Needs decision</span>
-              <strong>{pendingRequests.length}</strong>
-            </div>
-            <div>
-              <span>Approved visits</span>
-              <strong>{approvedRequests.length}</strong>
-            </div>
-            <div>
-              <span>Doctor invites</span>
-              <strong>{outgoingRequests.filter((request) => request.status === "pending").length}</strong>
-            </div>
-          </div>
-          <div className="exchangeTicker" aria-label="Exchange status">
-            <div>
-              <strong>Likely to confirm</strong>
-              <span>{Math.max(approvedRequests.length, 1)} visits with clean contact data</span>
-            </div>
-            <div>
-              <strong>Needs follow-up</strong>
-              <span>{deniedRequests.length + pendingRequests.length} requests awaiting human decision</span>
-            </div>
-          </div>
-          <HospitalDoctorRequestForm doctors={doctors} onCreateDoctorRequest={onCreateDoctorRequest} />
-          <div className="requestSectionHeader">
-            <h3>Incoming from doctors</h3>
-            <span>{incomingRequests.length} total</span>
-          </div>
-          <div className="requestQueue">
-            {incomingRequests.length ? (
-              incomingRequests.map((request) => (
-                <ScheduleRequestCard
-                  key={request.id}
-                  request={request}
-                  title={request.doctorName}
-                  subtitle={request.doctorEmail}
-                  onApprove={() => onUpdateRequestStatus(request.id, "approved")}
-                  onDeny={() => onUpdateRequestStatus(request.id, "denied")}
-                />
-              ))
-            ) : (
-              <div className="emptyState">
-                <ClipboardList size={28} />
-                <h3>No scheduling requests</h3>
-                <p>Incoming doctor requests for {facility.name} will appear here.</p>
-              </div>
-            )}
-          </div>
-          <div className="requestSectionHeader">
-            <h3>Requests sent to doctors</h3>
-            <span>{outgoingRequests.length} total</span>
-          </div>
-          <div className="requestQueue">
-            {outgoingRequests.length ? (
-              outgoingRequests.map((request) => (
-                <ScheduleRequestCard
-                  key={request.id}
-                  request={request}
-                  title={request.doctorName}
-                  subtitle={`${request.doctorEmail} · doctor decision`}
-                />
-              ))
-            ) : (
-              <div className="emptyState compactEmpty">
-                <UserRound size={24} />
-                <h3>No doctor invites sent</h3>
-                <p>Use the request form above to ask a doctor to visit {facility.name}.</p>
-              </div>
-            )}
-          </div>
-        </section>
-        <aside className="hospitalFacilityPane">
-          <div className="facilityHero">
-            <span className={`tierDot ${meta.className}`} />
-            <div>
-              <h2>{facility.name}</h2>
-              <p>
-                {facility.type}
-                {facility.addressLine ? ` · ${facility.addressLine}` : ` · ${facility.city}, ${facility.state}`}
-              </p>
-            </div>
-          </div>
-          <div className="contactGrid">
-            {facility.phone ? (
-              <a href={`tel:${facility.phone}`}>
-                <Phone size={15} />
-                {facility.phone}
-              </a>
-            ) : (
-              <span>
-                <Phone size={15} />
-                No phone listed
-              </span>
-            )}
-            {facility.email ? (
-              <a href={`mailto:${facility.email}`}>
-                <Mail size={15} />
-                {facility.email}
-              </a>
-            ) : (
-              <span>
-                <Mail size={15} />
-                No email listed
-              </span>
-            )}
-            {facility.facebookUrl && (
-              <a href={facility.facebookUrl} target="_blank" rel="noreferrer">
-                <ExternalLink size={15} />
-                Facebook page
-              </a>
-            )}
-          </div>
-          <div className="evidenceList">
-            {facility.evidence.map((item) => (
-              <div key={`${facility.id}-${item.field}`}>
-                <span>{item.field}</span>
-                <p>{item.text}</p>
-              </div>
-            ))}
-          </div>
-          <div className="flagList">
-            {facility.flags.map((flag) => (
-              <span key={flag}>{flag}</span>
-            ))}
-          </div>
-        </aside>
-      </main>
-    </div>
-  );
-}
-
-function HospitalDoctorRequestForm({ doctors, onCreateDoctorRequest }) {
-  const [doctorId, setDoctorId] = useState(doctors[0]?.id || "");
-  const [date, setDate] = useState("2026-06-18");
-  const [time, setTime] = useState("11:00");
-  const [purpose, setPurpose] = useState("Volunteer specialist visit");
-  const [notice, setNotice] = useState("");
-
-  useEffect(() => {
-    if (!doctorId && doctors[0]?.id) {
-      setDoctorId(doctors[0].id);
-    }
-  }, [doctorId, doctors]);
-
-  return (
-    <form
-      className="doctorRequestForm"
-      onSubmit={(event) => {
-        event.preventDefault();
-        const result = onCreateDoctorRequest({ doctorId, date, time, purpose });
-        setNotice(result.ok ? "Request sent to doctor." : result.message);
-      }}
-    >
-      <div className="requestSectionHeader inlineHeader">
-        <h3>Request a doctor</h3>
-        <span>{doctors.length} available</span>
-      </div>
-      <label>
-        Doctor
-        <select value={doctorId} onChange={(event) => setDoctorId(event.target.value)} disabled={!doctors.length}>
-          {doctors.length ? (
-            doctors.map((doctor) => (
-              <option key={doctor.id} value={doctor.id}>
-                {getDisplayName(doctor)}
-              </option>
-            ))
-          ) : (
-            <option>No doctor accounts yet</option>
-          )}
-        </select>
-      </label>
-      <div className="formSplit">
-        <label>
-          Date
-          <input type="date" value={date} onChange={(event) => setDate(event.target.value)} />
-        </label>
-        <label>
-          Time
-          <input type="time" value={time} onChange={(event) => setTime(event.target.value)} />
-        </label>
-      </div>
-      <label>
-        Purpose
-        <input value={purpose} onChange={(event) => setPurpose(event.target.value)} />
-      </label>
-      <button className="primaryButton" type="submit" disabled={!doctors.length || !doctorId}>
-        <Send size={16} />
-        Send request
-      </button>
-      {notice && <p className="requestNotice">{notice}</p>}
-    </form>
-  );
-}
 
 function ScheduleRequestCard({
   request,
@@ -2126,7 +1333,7 @@ function SchedulePanel({
   onAcceptHospitalRequest,
   onDenyHospitalRequest
 }) {
-  const [facilityId, setFacilityId] = useState(facilities[0].id);
+  const [facilityId, setFacilityId] = useState(facilities[0]?.id ?? "");
   const [date, setDate] = useState("2026-06-17");
   const [time, setTime] = useState("09:30");
   const [purpose, setPurpose] = useState("Volunteer screening camp");
@@ -2515,63 +1722,5 @@ function runButtonAction(event, action) {
   action();
 }
 
-function loadGoogleMaps(apiKey) {
-  if (window.google?.maps?.Map && window.google?.maps?.marker?.AdvancedMarkerElement) {
-    return Promise.resolve();
-  }
-  if (window.__referralGoogleMapsPromise) {
-    return window.__referralGoogleMapsPromise;
-  }
-  const existing = document.querySelector("script[data-google-maps]");
-  if (existing && !window.google?.maps?.Map) {
-    existing.remove();
-  }
-  window.__referralGoogleMapsPromise = new Promise((resolve, reject) => {
-    window.__initReferralGoogleMaps = () => {
-      resolve();
-    };
-    const script = document.createElement("script");
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&v=weekly&loading=async&libraries=marker&callback=__initReferralGoogleMaps`;
-    script.async = true;
-    script.defer = true;
-    script.dataset.googleMaps = "true";
-    script.onerror = () => {
-      window.__referralGoogleMapsPromise = null;
-      reject(new Error("Unable to load Google Maps"));
-    };
-    document.head.appendChild(script);
-  });
-  return window.__referralGoogleMapsPromise;
-}
-
-function makeGoogleMarkerContent(tier, selected) {
-  const marker = document.createElement("div");
-  marker.className = `googleMarkerPin ${tier} ${selected ? "selected" : ""}`;
-  marker.innerHTML = `<span></span>`;
-  return marker;
-}
-
-// Google Maps' InfoWindow.setContent takes an HTML string, so any facility field
-// interpolated here must be HTML-escaped — otherwise a stray "<" in source data
-// would inject markup into the map popup.
-function escapeHtml(value) {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
-function renderMapInfo(facility) {
-  const tierLabel = tierMeta[facility.tier].label;
-  return `
-    <div class="gmInfo">
-      <strong>${escapeHtml(facility.name)}</strong>
-      <span>${escapeHtml(facility.city)}, ${escapeHtml(facility.state)} · ${escapeHtml(facility.distanceKm)} km</span>
-      <em>${escapeHtml(tierLabel)} evidence</em>
-    </div>
-  `;
-}
 
 export default App;
