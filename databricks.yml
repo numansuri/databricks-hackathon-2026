@@ -6,14 +6,8 @@ resources:
     referral_copilot:
       name: referral-copilot
       source_code_path: .
-      description: Shiftlink doctor and hospital scheduling exchange prototype.
+      description: Shiftlink — place specialist volunteers where the need is highest.
       resources:
-        - name: google_maps_api_key
-          description: Google Maps JavaScript API key for the map workspace.
-          secret:
-            scope: referral-copilot
-            key: google-maps-api-key
-            permission: READ
         - name: outreach_model
           description: Foundation Model serving endpoint used to draft outreach messages.
           serving_endpoint:
@@ -25,8 +19,6 @@ resources:
           - run
           - start
         env:
-          - name: VITE_GOOGLE_MAPS_API_KEY
-            value_from: google_maps_api_key
           - name: LLM_PROVIDER
             value: databricks
           - name: OUTREACH_MODEL

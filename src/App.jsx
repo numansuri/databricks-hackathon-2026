@@ -52,8 +52,7 @@ const SESSION_USER_KEY = "referralCopilotSessionUserId";
 const SCHEDULE_REQUESTS_KEY = "referralCopilotScheduleRequests";
 const SAMPLE_PROFILE_TEXT =
   "I am a general physician with eight years of experience in diabetes and hypertension care. I can volunteer monthly for rural screening camps and prefer facilities in Gujarat, Rajasthan, and Maharashtra.";
-const DEMO_PROFILE_TRANSCRIPT =
-  "I am a cardiologist with 10 years of ICU experience. I can support emergency cardiac referrals, hypertension care, and volunteer cardiac screening camps in Gujarat and Rajasthan.";
+const DEMO_PROFILE_TRANSCRIPT = "pediatrician";
 
 // Facilities are NOT hardcoded (integration-spec §7.1, D25). They come from the
 // bundled recommender slice: DoctorApp seeds a deduped-by-id `facilities` state
@@ -1835,9 +1834,8 @@ function mapFacilityForApi(facility) {
     email: facility.email || null,
     phone: facility.phone || null,
     website: facility.website || null,
-    facebook: facility.facebookUrl || null,
-    capabilities: [],
-    match: facility.match || ""
+    facebook: facility.facebook || null,
+    capabilities: facility.specialtiesList || []
   };
 }
 
@@ -1952,7 +1950,7 @@ function localOutreachDraft(facility, doctor) {
   const email = (facility.email || "").trim() || null;
   const phone = (facility.phone || "").trim() || null;
   const website = ensureUrlClient(facility.website);
-  const facebook = ensureUrlClient(facility.facebookUrl);
+  const facebook = ensureUrlClient(facility.facebook);
 
   const phoneRaw = phone ? phone.replace(/[^\d]/g, "") : "";
   const local = phoneRaw.startsWith("91") && phoneRaw.length === 12 ? phoneRaw.slice(2) : phoneRaw;
