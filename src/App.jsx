@@ -153,6 +153,24 @@ function normalizeEmail(email) {
   return email.trim().toLowerCase();
 }
 
+function normalizeFacilityName(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isRequestForHospital(request, facility) {
+  if (!request || !facility) return false;
+  if (request.facilityId && request.facilityId === facility.id) return true;
+  const requestFacilityName = normalizeFacilityName(request.facilityName);
+  const hospitalFacilityName = normalizeFacilityName(facility.name);
+  return Boolean(requestFacilityName && hospitalFacilityName && requestFacilityName === hospitalFacilityName);
+}
+
 function getProfileKey(userId) {
   return `referralCopilotDoctorProfile:${userId}`;
 }
@@ -2180,7 +2198,7 @@ function HospitalDashboard({
   onToggleTheme
 }) {
   const facility = getHospitalFacility(user);
-  const facilityRequests = requests.filter((request) => request.facilityId === facility.id);
+  const facilityRequests = requests.filter((request) => isRequestForHospital(request, facility));
   const incomingRequests = facilityRequests.filter((request) => getRequestDirection(request) === "doctor_to_hospital");
   const outgoingRequests = facilityRequests.filter((request) => getRequestDirection(request) === "hospital_to_doctor");
   const pendingRequests = incomingRequests.filter((request) => request.status === "pending");
