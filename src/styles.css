@@ -2402,3 +2402,144 @@ textarea::placeholder {
     flex-direction: column;
   }
 }
+
+/* --- Outreach drafting feature --- */
+.status-drafting {
+  color: #2c6f7b;
+  background: var(--exchangeSoft);
+}
+
+.sourceBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+}
+
+.sourceBadge.ai {
+  color: #0f684d;
+  background: var(--mintSoft);
+}
+
+.sourceBadge.template {
+  color: #8a5600;
+  background: var(--amberSoft);
+}
+
+.channelSelector {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.channelSelector button {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  background: var(--surface);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.channelSelector button.active {
+  color: #fff;
+  background: var(--exchange);
+  border-color: var(--exchange);
+}
+
+.draftField {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.draftField input {
+  height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0 12px;
+  color: var(--ink);
+  background: #fff;
+  outline: 0;
+}
+
+.draftTextarea {
+  min-height: 150px;
+  resize: vertical;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 12px;
+  color: var(--ink);
+  background: #fff;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+  outline: 0;
+}
+
+.sendRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.sendRow .primaryButton,
+.sendRow .ghostButton {
+  text-decoration: none;
+}
+
+.phoneScriptBox {
+  display: grid;
+  gap: 8px;
+}
+
+.draftingState {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+  color: var(--muted);
+  background: var(--soft);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.draftingSpinner {
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  border: 2px solid color-mix(in srgb, var(--exchange) 35%, transparent);
+  border-top-color: var(--exchange);
+  animation: draftingSpin 720ms linear infinite;
+}
+
+@keyframes draftingSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+:root[data-theme="dark"] .draftField input,
+:root[data-theme="dark"] .draftTextarea {
+  color: var(--ink);
+  background: var(--surfaceElevated);
+  border-color: var(--line);
+}
+
+:root[data-theme="dark"] .channelSelector button {
+  background: var(--surfaceElevated);
+}
