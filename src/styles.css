@@ -1195,7 +1195,7 @@ textarea {
 }
 
 .googleMarkerPin:hover,
-.googleMarkerPin:focus-visible {
+gmp-advanced-marker:focus-visible .googleMarkerPin {
   transform: scale(1.14);
   box-shadow:
     0 14px 28px rgba(23, 32, 28, 0.32),
@@ -1227,7 +1227,7 @@ textarea {
 }
 
 .googlePlacePin:hover,
-.googlePlacePin:focus-visible {
+gmp-advanced-marker:focus-visible .googlePlacePin {
   transform: scale(1.12);
   box-shadow:
     0 15px 30px rgba(23, 32, 28, 0.34),

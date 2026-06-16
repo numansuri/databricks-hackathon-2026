@@ -1757,6 +1757,7 @@ function GoogleMapShell({ facilities: visibleFacilities, selectedFacility, onSel
             map,
             title: facility.name,
             content,
+            gmpClickable: true,
             zIndex: isSelected ? 20 : 10
           });
           bindAdvancedMarkerClick(marker, content, () => {
@@ -1885,6 +1886,7 @@ function GoogleMapShell({ facilities: visibleFacilities, selectedFacility, onSel
             map,
             title: place.name,
             content,
+            gmpClickable: true,
             zIndex: 30
           });
           bindAdvancedMarkerClick(marker, content, () => {
@@ -2756,7 +2758,6 @@ function bindAdvancedMarkerClick(marker, content, onClick) {
     onClick();
   };
 
-  marker.addListener?.("click", runClick);
   marker.addEventListener?.("gmp-click", runClick);
   content?.addEventListener?.("click", runClick);
   content?.addEventListener?.("keydown", (event) => {
@@ -2769,8 +2770,6 @@ function bindAdvancedMarkerClick(marker, content, onClick) {
 function makeGoogleMarkerContent(tier, selected, label) {
   const marker = document.createElement("div");
   marker.className = `googleMarkerPin ${tier} ${selected ? "selected" : ""}`;
-  marker.setAttribute("role", "button");
-  marker.setAttribute("tabindex", "0");
   marker.setAttribute("aria-label", label ? `Open ${label}` : "Open facility details");
   marker.innerHTML = `<span></span>`;
   return marker;
@@ -2779,8 +2778,6 @@ function makeGoogleMarkerContent(tier, selected, label) {
 function makePlaceMarkerContent(label) {
   const marker = document.createElement("div");
   marker.className = "googlePlacePin";
-  marker.setAttribute("role", "button");
-  marker.setAttribute("tabindex", "0");
   marker.setAttribute("aria-label", label ? `Open Google result ${label}` : "Open Google result");
   marker.innerHTML = `<span></span>`;
   return marker;
