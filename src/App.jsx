@@ -113,12 +113,6 @@ const facilities = [
   }
 ];
 
-const quickPrompts = [
-  "Emergency cardiac care near Ahmedabad",
-  "Volunteer cardiology camp in rural Rajasthan",
-  "Facilities with ICU equipment and reliable phone contacts"
-];
-
 const weekDays = [
   "Mon, Jun 15",
   "Tue, Jun 16",
@@ -1441,13 +1435,6 @@ function SearchPanel({
             Chat
           </span>
           <strong>{loading ? "Streaming" : "Ready"}</strong>
-        </div>
-        <div className="quickPromptRow">
-          {quickPrompts.map((prompt) => (
-            <button key={prompt} onClick={() => submitSearch(prompt)} disabled={loading}>
-              {prompt}
-            </button>
-          ))}
         </div>
         <div className="chatLog" ref={chatLogRef}>
           {messages.map((message, index) => (

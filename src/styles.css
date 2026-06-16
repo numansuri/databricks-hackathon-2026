@@ -713,29 +713,6 @@ textarea {
   background: #e8ecff;
 }
 
-.quickPromptRow {
-  display: flex;
-  gap: 8px;
-  overflow-x: auto;
-  padding-bottom: 2px;
-}
-
-.quickPromptRow button {
-  flex: 0 0 auto;
-  max-width: 180px;
-  min-height: 36px;
-  padding: 0 11px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  color: #394942;
-  background: #fff;
-  font-size: 12px;
-  font-weight: 800;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .dataSourceStrip {
   min-height: 38px;
   display: grid;
@@ -807,30 +784,13 @@ textarea {
   letter-spacing: 0.04em;
 }
 
-.chatDock .quickPromptRow {
-  display: grid;
-  grid-template-columns: 1fr;
-  overflow: visible;
-}
-
-.chatDock .quickPromptRow button {
-  width: 100%;
-  max-width: none;
-  height: auto;
-  min-height: 34px;
-  padding: 8px 10px;
-  justify-content: flex-start;
-  line-height: 1.2;
-  text-align: left;
-  white-space: normal;
-}
-
 .chatLog {
   display: flex;
   flex-direction: column;
   gap: 10px;
   min-height: 104px;
-  max-height: 168px;
+  flex: 1 1 auto;
+  max-height: 242px;
   overflow: auto;
   padding: 12px;
   background: var(--soft);
@@ -920,8 +880,7 @@ textarea {
   background: var(--mint);
 }
 
-.chatInput button:disabled,
-.quickPromptRow button:disabled {
+.chatInput button:disabled {
   cursor: wait;
   opacity: 0.68;
 }
@@ -2244,8 +2203,7 @@ textarea {
 .logoutButton,
 .drawerActions button,
 .cardActions button,
-.mapToolbar button,
-.quickPromptRow button {
+.mapToolbar button {
   color: var(--ink);
   background: var(--surfaceElevated);
   border-color: var(--line);
