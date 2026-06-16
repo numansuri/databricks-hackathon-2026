@@ -183,7 +183,7 @@ asserting the visit as confirmed, requires citing the contact source, and append
 ### Persistence (hard hackathon requirement — "persist user actions")
 **Verified:** the dataset catalog is a **read-only Delta Sharing catalog** (`CREATE TABLE` denied);
 `workspace.default` is **writable** (CREATE/INSERT/DROP confirmed). So persist to
-`workspace.referral_copilot`:
+`workspace.shiftlink_app`:
 - `saved_shortlist` (user, facility, status: shortlisted→contacted→finalized→removed, notes, soft-delete)
 - `outreach_log` (draft text, the contact + its completeness score, specialist overrides, status,
   model used, timestamps)
@@ -251,7 +251,7 @@ OR-Tools TSP — overkill for <20 stops; defer until real road-time data exists.
 JSON-array strings; NFHS `_pct` cols are strings with `*`/`(…)`; district names need normalization
 (UPPERCASE postal vs Title-Case NFHS).
 
-**Persistence:** `workspace.referral_copilot.{saved_shortlist, outreach_log}` (writable; dataset
+**Persistence:** `workspace.shiftlink_app.{saved_shortlist, outreach_log}` (writable; dataset
 catalog is read-only).
 
 **App:** Databricks App on Free Edition — **Streamlit** (fastest path; Dash/Gradio/Flask also

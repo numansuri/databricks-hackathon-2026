@@ -36,6 +36,11 @@ plus three bug fixes and one dedup on `04`/`06`/`08`). All tables verified.
 materializes `facilities_data_dictionary` from `information_schema.columns`. All are `CREATE OR REPLACE`
 → idempotent and safe to re-run.
 
+`20_shiftlink_app_user_database.sql` is not part of the facility enrichment pipeline. It is a planned
+Databricks Lakebase Postgres schema/seed artifact for app-owned user and profile persistence under the
+`shiftlink_app` schema. The current live app still uses browser `localStorage` for prototype users,
+profiles, and scheduling state.
+
 **Bug fixes (this revision):** `04` now clamps any page/post date parsed *after* the scrape anchor
 (`2025-12-21`) to NULL (a page can't be updated after it was scraped). `06` removed eight free-text
 clinical flags + two mined counts that exactly **duplicated** `facilities_enrich_clinical_facts`

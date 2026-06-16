@@ -43,12 +43,12 @@ Three source tables (read-only):
 - `databricks_virtue_foundation_dataset_dais_2026.virtue_foundation_dataset.india_post_pincode_directory`
 - `databricks_virtue_foundation_dataset_dais_2026.virtue_foundation_dataset.nfhs_5_district_health_indicators`
 
-App-owned tables (read/write):
-- `users` — user_id, email, role, display_name, password_hash, facility_id, hospital_name, hospital_street_address, hospital_phone, hospital_facebook_url, created_at
-- `doctor_profiles` — doctor_id, raw_text, extracted_tags (JSON), created_at
-- `referral_shortlist` — doctor_id, facility_id, added_at
-- `volunteering_schedule` — doctor_id, facility_id, visit_date, notes, status
-- `scheduling_requests` — request_id, direction, requested_by, doctor_id, facility_id, visit_date, notes, status, reviewed_by, reviewed_at
+App-owned tables (read/write, planned under `workspace.shiftlink_app`):
+- `workspace.shiftlink_app.users` — user_id, email, role, display_name, password_hash, created_at
+- `workspace.shiftlink_app.doctor_profiles` — doctor_id, raw_text, extracted_tags (JSON), created_at
+- `workspace.shiftlink_app.hospital_profiles` — hospital_id, hospital_name, hospital_street_address, hospital_phone, hospital_facebook_url, facility_sk, created_at
+- `workspace.shiftlink_app.referral_shortlist` — doctor_id, facility_id, added_at
+- `workspace.shiftlink_app.schedule_requests` — request_id, direction, requested_by, doctor_id, facility_id, visit_date, notes, status, reviewed_by, reviewed_at
 
 **Identity:** The app has two user roles: `doctor` and `hospital`. Doctors use the referral workspace. Hospital users create a hospital profile during sign-up, review incoming doctor-to-hospital scheduling requests for their hospital profile, and can send hospital-to-doctor requests from the user table. The current frontend prototype stores local accounts and request state in `localStorage`; the backend version should replace that with a real user database, password hashing, session management, and role authorization.
 
@@ -72,7 +72,7 @@ After submission, `POST /onboard` calls an LLM to extract structured tags:
 }
 ```
 
-The raw text and tags are stored in `doctor_profiles`. The raw text is injected as system context into every subsequent LLM call.
+The raw text and tags are stored in `workspace.shiftlink_app.doctor_profiles` once backend persistence is implemented. The current prototype stores this profile locally and injects it as context into subsequent LLM calls.
 
 ---
 

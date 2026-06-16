@@ -90,10 +90,43 @@ The app does not query the read-only source tables directly at runtime. It queri
 
 - `workspace.virtue_foundation_enriched.gold_facilities`
 
+## Table Naming Contract
+
+Shiftlink keeps facility analytics and app-owned persistence in separate namespaces:
+
+| Purpose | Namespace | Status |
+|---|---|---|
+| Facility analytics, derived from the Virtue Foundation dataset | `workspace.virtue_foundation_enriched` | Live |
+| App-owned users, profiles, and scheduling state | `workspace.shiftlink_app` in Databricks docs/metadata; `shiftlink_app` inside Lakebase Postgres SQL | Planned |
+
+Current runtime facility table:
+
+- `workspace.virtue_foundation_enriched.gold_facilities`
+
+Related Lakehouse tables available for future recommendation work:
+
+- `workspace.virtue_foundation_enriched.gold_pincode`
+- `workspace.virtue_foundation_enriched.gold_nfhs_district`
+- `workspace.virtue_foundation_enriched.fct_facility_specialty`
+- `workspace.virtue_foundation_enriched.gold_demand_supply_gap`
+
+Planned app persistence table names:
+
+- `workspace.shiftlink_app.users`
+- `workspace.shiftlink_app.doctor_profiles`
+- `workspace.shiftlink_app.hospital_profiles`
+- `workspace.shiftlink_app.referral_shortlist`
+- `workspace.shiftlink_app.schedule_requests`
+- `workspace.shiftlink_app.chat_events`
+- `workspace.shiftlink_app.map_searches`
+
+The app does not currently query `workspace.shiftlink_app.*`; local account/profile/scheduling state remains browser-backed until backend auth and persistence routes are implemented. The Lakebase schema artifact for the user/profile subset is [`sql/20_shiftlink_app_user_database.sql`](sql/20_shiftlink_app_user_database.sql).
+
 Useful repo context:
 
 - `findings/dataset-deep-dive.md` summarizes the source tables and data quality traps.
 - `docs/superpowers/specs/2026-06-16-shiftlink-integration-spec.md` is the latest planning/spec document. It is reference material and is not fully implemented in the current React prototype.
+- `docs/shiftlink-user-database-lakebase.md` documents the planned Lakebase user/profile tables using the Shiftlink table naming contract.
 - `docs/superpowers/specs/2026-06-16-onboarding-flow-final.md`, `docs/superpowers/specs/2026-06-16-recommender-changes.md`, `docs/superpowers/specs/2026-06-16-outreach-changes.md`, and `docs/superpowers/specs/2026-06-16-scheduler-agent-final.md` are feature planning/reference docs.
 - `docs/visual-directions/referral-copilot-mockups.html` contains the visual direction board used before selecting the Hospital Exchange design direction.
 - `explore.py` is a local Databricks exploration script. It is not part of the React app runtime.
@@ -319,6 +352,7 @@ The `.env` file is ignored by git. Do not commit real API keys. The Google Maps 
 |-- README.md
 |-- databricks.yml
 |-- docs/
+|   |-- shiftlink-user-database-lakebase.md
 |   |-- visual-directions/
 |   |   `-- referral-copilot-mockups.html
 |   |-- superpowers/specs/
@@ -366,7 +400,7 @@ Current verification results:
 - `databricks bundle validate` completed successfully for the `dev` target.
 - `databricks apps deploy --auto-approve` completed successfully.
 - `databricks apps get referral-copilot -o json` reported the app in `RUNNING` state with active compute.
-- Active Databricks deployment ID: `01f169c6c3d518b490595916848c74d4`.
+- Active Databricks deployment ID: `01f169c9445612f38f6586944d319fc5`.
 - Active Databricks deployment status: `SUCCEEDED`.
 - `databricks grants get table workspace.virtue_foundation_enriched.gold_facilities -o json` shows the app service principal has `SELECT`.
 - Local Lakehouse-mode `/api/facilities?limit=5` returned five records from `workspace.virtue_foundation_enriched.gold_facilities`.
@@ -388,5 +422,5 @@ Current verification results:
 2. Extend runtime search beyond `gold_facilities` to include district need and specialty gap tables.
 3. Add recommendation scoring backed by `gold_demand_supply_gap` and related Lakehouse fields.
 4. Add backend user accounts, password hashing, session management, and role authorization.
-5. Persist doctor profiles, hospital profiles, chat events, map searches, and schedule requests to `workspace.shiftlink_app`.
+5. Persist doctor profiles, hospital profiles, referral shortlists, schedule requests, chat events, and map searches under the `workspace.shiftlink_app` app namespace.
 6. Add email draft generation only if a send/review workflow is also implemented.

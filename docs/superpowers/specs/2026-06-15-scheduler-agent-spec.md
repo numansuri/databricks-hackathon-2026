@@ -318,7 +318,7 @@ function getScheduleRunKey(userId) { return `referralCopilotScheduleRun:${userId
 ```
 Approving mutates `approved` on the matching `proposals[]` item and re-`saveJson`s the run, so ledger/review reflect approval state across reloads without touching the confirmed-schedule key.
 
-**Later (post-hackathon, not MVP):** write each run to **`workspace.referral_copilot.schedule_runs`** (the writable catalog — the source clinic/NFHS data is a read-only Delta Share and is never written). Columns: `run_id`, `user_id`, `run_inputs` (JSON), `ledger` (JSON), `narrative` (JSON), `narrative_source` (`llm`|`template`), `model_used`, `created_at_ist`.
+**Later (post-hackathon, not MVP):** write each run to **`workspace.shiftlink_app.schedule_runs`** (the app-owned persistence namespace — the source clinic/NFHS data is a read-only Delta Share and is never written). Columns: `run_id`, `user_id`, `run_inputs` (JSON), `ledger` (JSON), `narrative` (JSON), `narrative_source` (`llm`|`template`), `model_used`, `created_at_ist`.
 
 ---
 

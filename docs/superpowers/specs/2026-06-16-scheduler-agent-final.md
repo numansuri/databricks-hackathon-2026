@@ -104,7 +104,7 @@ IST-only; ~120-min visits (editable); travel estimated from straight-line distan
 ## 6. Persistence
 - Confirmed visits keep persisting via the existing `getScheduleKey(user.id)` + `updateSchedule` path (approved proposals land there unchanged).
 - Latest run persists under `getScheduleRunKey(user.id)` via `saveJson`; read on mount; only the most recent run kept. Approving mutates `approved` on the matching `proposals[]` item and re-persists.
-- **P1 (stretch):** write each run to `workspace.referral_copilot.schedule_runs` (writable catalog); + the LLM narrator (one `temperature:0` call that only narrates engine-decided facts, with `buildTemplateNarrative` fallback — never on the feasibility path). Both stretch-only.
+- **P1 (stretch):** write each run to `workspace.shiftlink_app.schedule_runs` (app-owned persistence namespace); + the LLM narrator (one `temperature:0` call that only narrates engine-decided facts, with `buildTemplateNarrative` fallback — never on the feasibility path). Both stretch-only.
 
 ---
 

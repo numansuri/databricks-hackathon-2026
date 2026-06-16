@@ -122,10 +122,17 @@ const lakehouseTables = [
   "workspace.virtue_foundation_enriched.gold_pincode",
   "workspace.virtue_foundation_enriched.gold_nfhs_district",
   "workspace.virtue_foundation_enriched.fct_facility_specialty",
-  "workspace.virtue_foundation_enriched.gold_demand_supply_gap",
+  "workspace.virtue_foundation_enriched.gold_demand_supply_gap"
+];
+
+const appPersistenceTables = [
   "workspace.shiftlink_app.users",
   "workspace.shiftlink_app.doctor_profiles",
-  "workspace.shiftlink_app.schedule_requests"
+  "workspace.shiftlink_app.hospital_profiles",
+  "workspace.shiftlink_app.referral_shortlist",
+  "workspace.shiftlink_app.schedule_requests",
+  "workspace.shiftlink_app.chat_events",
+  "workspace.shiftlink_app.map_searches"
 ];
 
 const shiftlinkInstructions = [
@@ -161,6 +168,7 @@ function getDataAccess(facilities = [], overrides = {}) {
     label: overrides.label || (isLakehouse ? "Lakehouse Delta tables" : "Local demo facility list"),
     activeTables: overrides.activeTables || (isLakehouse ? [lakehouseFacilitiesTable] : []),
     expectedLakehouseTables: lakehouseTables,
+    plannedAppPersistenceTables: appPersistenceTables,
     facilityCount: overrides.facilityCount ?? facilityCount,
     verified: overrides.verified ?? (isLakehouse && configuredForLakehouse),
     message:
