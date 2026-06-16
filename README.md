@@ -25,14 +25,15 @@ Implemented:
 - Demo transcript fallback when `/api/transcribe` is not available.
 - Local doctor profile persistence in `localStorage`.
 - Doctor app shell with Search, Schedule, and Shortlist tabs.
-- Search panel with ranked facility cards above a bottom-docked chat transcript and input.
+- Lakehouse-backed facility loading from `GET /api/facilities`.
+- Search panel with ranked Lakehouse facility cards above a bottom-docked chat transcript and input.
 - Streaming chatbot endpoint at `POST /api/chat/stream`.
 - Non-streaming structured chatbot endpoint at `POST /api/chat`.
 - OpenAI `gpt-5.5` chatbot responses with medium reasoning by default.
 - Structured chatbot metadata for assistant reply text, map queries, facility IDs, proposed profile add/remove changes, guardrail status, and data-source status.
 - Google Maps JavaScript API integration when `GET /api/config` returns a Google Maps key.
 - Google Maps fallback map when no API key is configured.
-- Pseudo facility markers using Google Maps Advanced Markers.
+- Lakehouse facility markers using Google Maps Advanced Markers.
 - Google Places hospital search from the map toolbar.
 - Chat-to-map handoff when the assistant returns a `mapQuery`.
 - Facility cards, evidence drawer, contact links, trust tiers, shortlist actions, and schedule builder.
@@ -48,7 +49,6 @@ Implemented:
 
 Not implemented yet:
 
-- Live Databricks SQL queries from the frontend.
 - Runtime persistence to backend tables for users, doctor profiles, shortlists, schedules, or two-way scheduling decisions.
 - Persistent chat history beyond the browser session.
 - Automatic persistence of chatbot-proposed profile context changes.
@@ -56,23 +56,29 @@ Not implemented yet:
 - Production authentication, authorization, password hashing, or session management.
 - Patient records or PHI handling.
 
-## Demo Data
+## Runtime Facility Data
 
-The frontend currently uses hardcoded pseudo facility data in `src/App.jsx`.
+The deployed app is configured with `SHIFTLINK_DATA_MODE=lakehouse`. In that mode, the Node server loads facility records from:
 
-The pseudo data is intentionally shaped like the planned Databricks data path:
+- `workspace.virtue_foundation_enriched.gold_facilities`
+
+`GET /api/facilities` queries Databricks SQL Statement Execution through the configured SQL warehouse, maps selected `gold_facilities` columns into the React facility-card shape, and returns `dataAccess` metadata for the UI. The doctor workspace shows the returned Lakehouse record count in the data-source strip.
+
+The app keeps three hardcoded demo facilities in `src/App.jsx` only as a fallback if the Lakehouse endpoint is unavailable.
+
+The Lakehouse-backed UI records include:
 
 - facility name, type, city, state, distance, latitude, longitude
 - trust tier: `strong`, `partial`, or `weak`
-- evidence snippets from fields such as capability, procedure, equipment, specialties, and description
-- weak-evidence flags
+- evidence snippets from fields such as clinical signals, equipment, specialties, bed count, doctor count, contact verification, and emergency-readiness tier
+- verification and quality flags
 - phone and email contact fields
 
-The map currently plots three pseudo facilities around Ahmedabad.
+The map plots the currently loaded Lakehouse facility records. Google Places search results render as a separate live-results layer on top of that dataset layer.
 
 ## Data Sources
 
-The current app runtime uses the hardcoded pseudo facility array in `src/App.jsx`. The runtime data source is reported by `GET /api/data-status`; the Databricks app is currently configured with `SHIFTLINK_DATA_MODE=demo`.
+The current app runtime uses the enriched Lakehouse table `workspace.virtue_foundation_enriched.gold_facilities`. The runtime data source is reported by `GET /api/data-status`; the Databricks app is configured with `SHIFTLINK_DATA_MODE=lakehouse`.
 
 The Lakehouse-oriented SQL assets target the Virtue Foundation dataset in Databricks Unity Catalog:
 
@@ -80,7 +86,9 @@ The Lakehouse-oriented SQL assets target the Virtue Foundation dataset in Databr
 - `databricks_virtue_foundation_dataset_dais_2026.virtue_foundation_dataset.india_post_pincode_directory`
 - `databricks_virtue_foundation_dataset_dais_2026.virtue_foundation_dataset.nfhs_5_district_health_indicators`
 
-The current frontend and Node server do not query those source tables or the derived Lakehouse tables at runtime.
+The app does not query the read-only source tables directly at runtime. It queries the derived serving table in the workspace catalog:
+
+- `workspace.virtue_foundation_enriched.gold_facilities`
 
 Useful repo context:
 
@@ -134,8 +142,8 @@ The Search tab has:
 
 - a bottom-docked streaming chat interaction area
 - a chat input
-- ranked pseudo facility cards
-- a visible data-source strip showing whether search is using local demo data or Lakehouse mode
+- ranked Lakehouse facility cards
+- a visible data-source strip showing whether search is using Lakehouse data or local fallback data
 - a Google map or fallback map
 - a map search field for cities, districts, and hospital locations
 - Google Places search results shown as a separate live-results layer when the Maps key supports Places
@@ -143,7 +151,7 @@ The Search tab has:
 
 The chatbot streams from `POST /api/chat/stream` and keeps `POST /api/chat` as a non-streaming structured fallback. The server uses `OPENAI_API_KEY`, `OPENAI_MODEL` (default `gpt-5.5`), `OPENAI_REASONING_EFFORT` (default `medium`), and `OPENAI_STREAM_TIMEOUT_MS` (default `45000`). Server-side guardrails keep the assistant focused on hospital search, doctor context, outreach, map logistics, and two-way scheduling. If the OpenAI key is missing or the streaming request fails, the endpoint streams a local fallback response so the UI remains usable.
 
-`GET /api/data-status` reports the active data mode. The current app default is `SHIFTLINK_DATA_MODE=demo`, which means chat and facility cards use the client-provided pseudo facility list. The runtime app is not querying Lakehouse tables until the future SQL-backed path is implemented.
+`GET /api/data-status` reports the active data mode. In Databricks, the app runs with `SHIFTLINK_DATA_MODE=lakehouse`; chat and facility cards use the facility list returned by `/api/facilities` from the enriched Lakehouse table. If the Lakehouse endpoint fails, the frontend falls back to the local demo facilities and marks the data-source strip accordingly.
 
 ### Shortlist
 
@@ -216,8 +224,19 @@ OPENAI_MODEL=gpt-5.5
 OPENAI_REASONING_EFFORT=medium
 OPENAI_STREAM_TIMEOUT_MS=45000
 OPENAI_TRANSCRIBE_MODEL=gpt-4o-transcribe
-SHIFTLINK_DATA_MODE=demo
+SHIFTLINK_DATA_MODE=lakehouse
+SHIFTLINK_FACILITIES_TABLE=workspace.virtue_foundation_enriched.gold_facilities
 ```
+
+For local Lakehouse testing, also provide Databricks workspace credentials and a SQL warehouse ID:
+
+```bash
+DATABRICKS_HOST=https://dbc-87f85fc5-dc00.cloud.databricks.com
+DATABRICKS_SQL_WAREHOUSE_ID=260da0aaab951fdb
+DATABRICKS_TOKEN=your_local_databricks_token
+```
+
+In Databricks Apps, `DATABRICKS_CLIENT_ID` and `DATABRICKS_CLIENT_SECRET` are injected by the app runtime, so the deployed app does not need a committed Databricks token.
 
 Optional for production-style Maps configuration:
 
@@ -268,9 +287,11 @@ npm run start
 - Start command: `npm run start`
 - Google Maps secret reference: scope `referral-copilot`, key `google-maps-api-key`
 - OpenAI secret reference: scope `referral-copilot`, key `openai-api-key`
+- SQL warehouse resource: `260da0aaab951fdb`
+- Unity Catalog table resource: `workspace.virtue_foundation_enriched.gold_facilities`
 - Runtime env aliases: `GOOGLE_MAPS_API_KEY`, `VITE_GOOGLE_MAPS_API_KEY`, and `OPENAI_API_KEY`
 - OpenAI defaults in the app config: `OPENAI_MODEL=gpt-5.5`, `OPENAI_REASONING_EFFORT=medium`, `OPENAI_STREAM_TIMEOUT_MS=45000`
-- Data source mode: `SHIFTLINK_DATA_MODE=demo`
+- Data source mode: `SHIFTLINK_DATA_MODE=lakehouse`
 
 The Databricks app resource name and URL still use the earlier `referral-copilot` deployment name, while the product UI shown to users is Shiftlink.
 
@@ -285,7 +306,7 @@ The app loads:
 - `places` library
 - Advanced Markers
 
-The map toolbar uses Google Places to search hospital locations near the doctor's query. The curated pseudo facility markers remain visible as the dataset layer, while Google Places search results render as a separate live-results layer.
+The map toolbar uses Google Places to search hospital locations near the doctor's query. Lakehouse facility markers remain visible as the dataset layer, while Google Places search results render as a separate live-results layer.
 
 The code uses `GOOGLE_MAPS_MAP_ID` or `VITE_GOOGLE_MAP_ID` when provided. If no map ID is provided, the app falls back to `DEMO_MAP_ID`, which is suitable for local prototype rendering but should be replaced for production.
 
@@ -335,6 +356,7 @@ npm run build
 npm audit --json
 databricks bundle validate
 databricks apps get referral-copilot -o json
+curl 'http://127.0.0.1:5174/api/facilities?limit=5'
 ```
 
 Current verification results:
@@ -342,9 +364,13 @@ Current verification results:
 - `npm run build` completed successfully.
 - `npm audit --json` reported zero vulnerabilities.
 - `databricks bundle validate` completed successfully for the `dev` target.
+- `databricks apps deploy --auto-approve` completed successfully.
 - `databricks apps get referral-copilot -o json` reported the app in `RUNNING` state with active compute.
-- Active Databricks deployment ID: `01f169a5b7eb1517b00c568abf2eeac7`.
+- Active Databricks deployment ID: `01f169c6c3d518b490595916848c74d4`.
 - Active Databricks deployment status: `SUCCEEDED`.
+- `databricks grants get table workspace.virtue_foundation_enriched.gold_facilities -o json` shows the app service principal has `SELECT`.
+- Local Lakehouse-mode `/api/facilities?limit=5` returned five records from `workspace.virtue_foundation_enriched.gold_facilities`.
+- The in-app browser rendered the doctor workspace with `Lakehouse Delta tables`, `24 live records`, and real facility names from the enriched table.
 
 ## Security and Privacy Notes
 
@@ -358,9 +384,9 @@ Current verification results:
 
 ## Next Engineering Steps
 
-1. Wire runtime facility search to the Lakehouse tables and change `SHIFTLINK_DATA_MODE` from `demo` to `lakehouse`.
-2. Add backend user accounts, password hashing, session management, and role authorization.
-3. Persist doctor profiles, hospital profiles, chat events, map searches, and schedule requests to `workspace.shiftlink_app`.
-4. Replace the browser-local pseudo facility array with API-loaded results from Databricks SQL.
-5. Add evidence scoring backed by real Lakehouse fields.
+1. Pass doctor profile, specialty, and region filters into `/api/facilities` instead of using one default Lakehouse query.
+2. Extend runtime search beyond `gold_facilities` to include district need and specialty gap tables.
+3. Add recommendation scoring backed by `gold_demand_supply_gap` and related Lakehouse fields.
+4. Add backend user accounts, password hashing, session management, and role authorization.
+5. Persist doctor profiles, hospital profiles, chat events, map searches, and schedule requests to `workspace.shiftlink_app`.
 6. Add email draft generation only if a send/review workflow is also implemented.

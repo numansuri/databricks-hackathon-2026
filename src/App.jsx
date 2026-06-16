@@ -47,7 +47,7 @@ const SAMPLE_PROFILE_TEXT =
 const DEMO_PROFILE_TRANSCRIPT =
   "I am a cardiologist with 10 years of ICU experience. I can support emergency cardiac referrals, hypertension care, and volunteer cardiac screening camps in Gujarat and Rajasthan.";
 
-const facilities = [
+const demoFacilities = [
   {
     id: "shaurya",
     name: "Shaurya Heart & Critical Care",
@@ -171,7 +171,7 @@ function getDisplayName(user) {
 }
 
 function getFacilityName(facilityId) {
-  return facilities.find((facility) => facility.id === facilityId)?.name || "Unknown facility";
+  return demoFacilities.find((facility) => facility.id === facilityId)?.name || "Unknown facility";
 }
 
 function getRequestDirection(request) {
@@ -196,8 +196,8 @@ function getHospitalProfile(user) {
 }
 
 function getHospitalFacility(user) {
-  if (!user) return facilities[0];
-  const legacyFacility = facilities.find((item) => item.id === user.facilityId);
+  if (!user) return demoFacilities[0];
+  const legacyFacility = demoFacilities.find((item) => item.id === user.facilityId);
   if (legacyFacility && !user.hospitalProfile) return legacyFacility;
 
   const profile = getHospitalProfile(user);
@@ -391,7 +391,6 @@ function App() {
   }
 
   function createScheduleRequest(entry) {
-    const facility = facilities.find((item) => item.id === entry.facilityId);
     const request = {
       id: crypto.randomUUID(),
       direction: "doctor_to_hospital",
@@ -399,7 +398,7 @@ function App() {
       doctorName: getDisplayName(activeUser),
       doctorEmail: activeUser.email,
       facilityId: entry.facilityId,
-      facilityName: facility?.name || "Unknown facility",
+      facilityName: entry.facilityName || getFacilityName(entry.facilityId),
       visitDate: entry.date,
       visitTime: entry.time,
       purpose: entry.purpose,
@@ -472,17 +471,25 @@ function DoctorApp({ user, requests, onCreateScheduleRequest, onUpdateRequestSta
   const profileKey = getProfileKey(user.id);
   const outreachKey = getOutreachKey(user.id);
   const scheduleKey = getScheduleKey(user.id);
+  const [facilities, setFacilities] = useState(demoFacilities);
+  const [facilityDataAccess, setFacilityDataAccess] = useState({
+    mode: "demo",
+    label: "Local demo facility list",
+    facilityCount: demoFacilities.length,
+    message: "Loading Lakehouse facility data."
+  });
   const [profile, setProfile] = useState(() => {
     const saved = localStorage.getItem(profileKey);
     return saved ? JSON.parse(saved) : null;
   });
   const [activeView, setActiveView] = useState("search");
-  const [selectedFacilityId, setSelectedFacilityId] = useState(facilities[0].id);
-  const [shortlist, setShortlist] = useState([facilities[0].id]);
+  const [selectedFacilityId, setSelectedFacilityId] = useState(demoFacilities[0].id);
+  const [shortlist, setShortlist] = useState([demoFacilities[0].id]);
   const [schedule, setSchedule] = useState(() => readJson(scheduleKey, [
     {
       id: "visit-1",
-      facilityId: facilities[0].id,
+      facilityId: demoFacilities[0].id,
+      facilityName: demoFacilities[0].name,
       date: "2026-06-16",
       time: "10:30",
       purpose: "Cardiology referral discussion",
@@ -495,11 +502,56 @@ function DoctorApp({ user, requests, onCreateScheduleRequest, onUpdateRequestSta
   const [outreachRequests, setOutreachRequests] = useState(() => readJson(outreachKey, []));
   const [mapSearchRequest, setMapSearchRequest] = useState({ query: "", nonce: 0 });
 
-  const selectedFacility = facilities.find((facility) => facility.id === selectedFacilityId) || facilities[0];
+  const selectedFacility = facilities.find((facility) => facility.id === selectedFacilityId) || facilities[0] || demoFacilities[0];
   const doctorRequests = requests.filter((request) => request.doctorId === user.id);
   const incomingHospitalRequests = doctorRequests.filter(
     (request) => getRequestDirection(request) === "hospital_to_doctor"
   );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadFacilities() {
+      try {
+        const response = await fetch("/api/facilities?limit=24", { cache: "no-store" });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.message || "Lakehouse facilities unavailable");
+        if (cancelled) return;
+        const nextFacilities = Array.isArray(data.facilities) && data.facilities.length ? data.facilities : demoFacilities;
+        setFacilities(nextFacilities);
+        setFacilityDataAccess(
+          data.dataAccess || {
+            mode: nextFacilities === demoFacilities ? "demo" : "lakehouse",
+            label: nextFacilities === demoFacilities ? "Local demo facility list" : "Lakehouse Delta tables",
+            facilityCount: nextFacilities.length
+          }
+        );
+        setSelectedFacilityId((current) =>
+          nextFacilities.some((facility) => facility.id === current) ? current : nextFacilities[0].id
+        );
+        setShortlist((current) => {
+          const retained = current.filter((id) => nextFacilities.some((facility) => facility.id === id));
+          return retained.length ? retained : [nextFacilities[0].id];
+        });
+      } catch (error) {
+        if (cancelled) return;
+        setFacilities(demoFacilities);
+        setFacilityDataAccess({
+          mode: "demo",
+          label: "Local demo facility list",
+          facilityCount: demoFacilities.length,
+          verified: false,
+          message: error.message || "Lakehouse facilities unavailable; using local fallback."
+        });
+      }
+    }
+
+    loadFacilities();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function persistOutreachRequests(nextRequests) {
     saveJson(outreachKey, nextRequests);
@@ -533,17 +585,22 @@ function DoctorApp({ user, requests, onCreateScheduleRequest, onUpdateRequestSta
 
   function addSchedule(entry, options = {}) {
     const shouldCreateRequest = options.createRequest !== false;
-    const request = shouldCreateRequest ? onCreateScheduleRequest(entry) : null;
-    const nextEntry = {
+    const facility = facilities.find((item) => item.id === entry.facilityId);
+    const normalizedEntry = {
       ...entry,
+      facilityName: entry.facilityName || facility?.name || getFacilityName(entry.facilityId)
+    };
+    const request = shouldCreateRequest ? onCreateScheduleRequest(normalizedEntry) : null;
+    const nextEntry = {
+      ...normalizedEntry,
       id: crypto.randomUUID(),
-      requestId: request?.id || options.requestId || entry.requestId || "",
-      status: options.status || entry.status || (request ? "pending" : "planned"),
+      requestId: request?.id || options.requestId || normalizedEntry.requestId || "",
+      status: options.status || normalizedEntry.status || (request ? "pending" : "planned"),
       approvalStatus:
-        options.approvalStatus || entry.approvalStatus || (request ? "hospital_approval_required" : "doctor_approved"),
+        options.approvalStatus || normalizedEntry.approvalStatus || (request ? "hospital_approval_required" : "doctor_approved"),
       calendarStatus:
-        options.calendarStatus || entry.calendarStatus || (request ? "pending_hospital_approval" : "calendar_event_created"),
-      source: options.source || entry.source || "manual"
+        options.calendarStatus || normalizedEntry.calendarStatus || (request ? "pending_hospital_approval" : "calendar_event_created"),
+      source: options.source || normalizedEntry.source || "manual"
     };
     updateSchedule((current) => [nextEntry, ...current]);
     setActiveView("schedule");
@@ -708,6 +765,7 @@ function DoctorApp({ user, requests, onCreateScheduleRequest, onUpdateRequestSta
           removeSchedule={removeSchedule}
           profile={profile}
           selectedFacility={selectedFacility}
+          facilityDataAccess={facilityDataAccess}
           requests={doctorRequests}
           incomingHospitalRequests={incomingHospitalRequests}
           onAcceptHospitalRequest={acceptHospitalRequest}
@@ -1228,7 +1286,7 @@ function DataSourceStrip({ dataAccess, facilityCount }) {
   const isLakehouse = sourceMode === "lakehouse";
   const label = dataAccess?.label || (isLakehouse ? "Lakehouse Delta tables" : "Local demo facility list");
   const detail = isLakehouse
-    ? `${dataAccess?.activeTables?.length || 0} active tables`
+    ? `${dataAccess?.facilityCount ?? facilityCount} live records`
     : `${facilityCount} local records`;
 
   return (
@@ -1251,6 +1309,7 @@ function SearchPanel({
   selectedFacility,
   schedule = [],
   requests = [],
+  facilityDataAccess = null,
   onMapSearch
 }) {
   const [input, setInput] = useState("");
@@ -1297,6 +1356,12 @@ function SearchPanel({
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (facilityDataAccess) {
+      setDataAccess(facilityDataAccess);
+    }
+  }, [facilityDataAccess]);
 
   useEffect(() => {
     chatLogRef.current?.scrollTo({
@@ -2396,6 +2461,12 @@ function SchedulePanel({
   const [time, setTime] = useState("09:30");
   const [purpose, setPurpose] = useState("Volunteer screening camp");
   const pendingHospitalRequests = incomingHospitalRequests.filter((request) => request.status === "pending");
+
+  useEffect(() => {
+    if (!facilities.some((facility) => facility.id === facilityId) && facilities[0]?.id) {
+      setFacilityId(facilities[0].id);
+    }
+  }, [facilities, facilityId]);
 
   return (
     <aside className="sidePanel schedulePanel">

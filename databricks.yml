@@ -24,6 +24,17 @@ resources:
             scope: referral-copilot
             key: openai-api-key
             permission: READ
+        - name: shiftlink_sql_warehouse
+          description: SQL warehouse used by Shiftlink to query Lakehouse-backed facility data.
+          sql_warehouse:
+            id: 260da0aaab951fdb
+            permission: CAN_USE
+        - name: shiftlink_gold_facilities
+          description: Enriched Virtue Foundation facility table used by the live app.
+          uc_securable:
+            securable_full_name: workspace.virtue_foundation_enriched.gold_facilities
+            securable_type: TABLE
+            permission: SELECT
       config:
         command:
           - npm
@@ -45,7 +56,11 @@ resources:
           - name: OPENAI_STREAM_TIMEOUT_MS
             value: "45000"
           - name: SHIFTLINK_DATA_MODE
-            value: demo
+            value: lakehouse
+          - name: DATABRICKS_SQL_WAREHOUSE_ID
+            value_from: shiftlink_sql_warehouse
+          - name: SHIFTLINK_FACILITIES_TABLE
+            value_from: shiftlink_gold_facilities
 
 targets:
   dev:
