@@ -2,6 +2,10 @@
 
 Frontend prototype for the Databricks Apps and Agents Hackathon for Good (DAIS 2026).
 
+**Live Databricks app:** [referral-copilot](https://referral-copilot-7474659963071016.aws.databricksapps.com)
+
+The deployed app may require Databricks workspace sign-in.
+
 Shiftlink is a role-based hospital exchange for referral and volunteering workflows. Doctors search facilities, inspect evidence, shortlist options, and send scheduling requests. Hospitals get a separate exchange view where they can approve or deny requests sent to their facility, and they can also request doctors directly from the local user table.
 
 ## Current Status
@@ -21,10 +25,12 @@ Implemented:
 - Demo transcript fallback when `/api/transcribe` is not available.
 - Local doctor profile persistence in `localStorage`.
 - Doctor app shell with Search, Schedule, and Shortlist tabs.
-- Chat-style left panel connected to `POST /api/chat`.
+- Search panel with ranked facility cards above a bottom-docked chat transcript and input.
+- Streaming chatbot endpoint at `POST /api/chat/stream`.
+- Non-streaming structured chatbot endpoint at `POST /api/chat`.
 - OpenAI `gpt-5.5` chatbot responses with medium reasoning by default.
-- Structured chatbot output for assistant reply text, map queries, facility IDs, quick prompts, and proposed profile add/remove changes.
-- Google Maps JavaScript API integration when `VITE_GOOGLE_MAPS_API_KEY` is set.
+- Structured chatbot metadata for assistant reply text, map queries, facility IDs, proposed profile add/remove changes, guardrail status, and data-source status.
+- Google Maps JavaScript API integration when `GET /api/config` returns a Google Maps key.
 - Google Maps fallback map when no API key is configured.
 - Pseudo facility markers using Google Maps Advanced Markers.
 - Google Places hospital search from the map toolbar.
@@ -43,7 +49,7 @@ Implemented:
 Not implemented yet:
 
 - Live Databricks SQL queries from the frontend.
-- Persistent backend tables for users, doctor profiles, shortlists, schedules, or two-way scheduling decisions.
+- Runtime persistence to backend tables for users, doctor profiles, shortlists, schedules, or two-way scheduling decisions.
 - Persistent chat history beyond the browser session.
 - Automatic persistence of chatbot-proposed profile context changes.
 - LLM-powered evidence scoring or email generation.
@@ -64,20 +70,23 @@ The pseudo data is intentionally shaped like the planned Databricks data path:
 
 The map currently plots three pseudo facilities around Ahmedabad.
 
-## Planned Data Sources
+## Data Sources
 
-The product design targets the Virtue Foundation dataset in Databricks Unity Catalog:
+The current app runtime uses the hardcoded pseudo facility array in `src/App.jsx`. The runtime data source is reported by `GET /api/data-status`; the Databricks app is currently configured with `SHIFTLINK_DATA_MODE=demo`.
+
+The Lakehouse-oriented SQL assets target the Virtue Foundation dataset in Databricks Unity Catalog:
 
 - `databricks_virtue_foundation_dataset_dais_2026.virtue_foundation_dataset.facilities`
 - `databricks_virtue_foundation_dataset_dais_2026.virtue_foundation_dataset.india_post_pincode_directory`
 - `databricks_virtue_foundation_dataset_dais_2026.virtue_foundation_dataset.nfhs_5_district_health_indicators`
 
-The current frontend does not query these tables directly.
+The current frontend and Node server do not query those source tables or the derived Lakehouse tables at runtime.
 
 Useful repo context:
 
 - `findings/dataset-deep-dive.md` summarizes the source tables and data quality traps.
-- `docs/superpowers/specs/2026-06-15-referral-copilot-design.md` contains the broader design spec.
+- `docs/superpowers/specs/2026-06-16-shiftlink-integration-spec.md` is the latest planning/spec document. It is reference material and is not fully implemented in the current React prototype.
+- `docs/superpowers/specs/2026-06-16-onboarding-flow-final.md`, `docs/superpowers/specs/2026-06-16-recommender-changes.md`, `docs/superpowers/specs/2026-06-16-outreach-changes.md`, and `docs/superpowers/specs/2026-06-16-scheduler-agent-final.md` are feature planning/reference docs.
 - `docs/visual-directions/referral-copilot-mockups.html` contains the visual direction board used before selecting the Hospital Exchange design direction.
 - `explore.py` is a local Databricks exploration script. It is not part of the React app runtime.
 
@@ -124,8 +133,7 @@ The saved doctor profile is stored per user in `localStorage` under `referralCop
 The Search tab has:
 
 - a bottom-docked streaming chat interaction area
-- quick prompt buttons
-- a search input
+- a chat input
 - ranked pseudo facility cards
 - a visible data-source strip showing whether search is using local demo data or Lakehouse mode
 - a Google map or fallback map
@@ -135,7 +143,7 @@ The Search tab has:
 
 The chatbot streams from `POST /api/chat/stream` and keeps `POST /api/chat` as a non-streaming structured fallback. The server uses `OPENAI_API_KEY`, `OPENAI_MODEL` (default `gpt-5.5`), `OPENAI_REASONING_EFFORT` (default `medium`), and `OPENAI_STREAM_TIMEOUT_MS` (default `45000`). Server-side guardrails keep the assistant focused on hospital search, doctor context, outreach, map logistics, and two-way scheduling. If the OpenAI key is missing or the streaming request fails, the endpoint streams a local fallback response so the UI remains usable.
 
-`GET /api/data-status` reports the active data mode. The current app default is `SHIFTLINK_DATA_MODE=demo`, which means chat and facility cards use the client-provided pseudo facility list. The Lakehouse tables are built in Databricks, but the runtime app is not querying those tables until the future SQL-backed path is implemented.
+`GET /api/data-status` reports the active data mode. The current app default is `SHIFTLINK_DATA_MODE=demo`, which means chat and facility cards use the client-provided pseudo facility list. The runtime app is not querying Lakehouse tables until the future SQL-backed path is implemented.
 
 ### Shortlist
 
@@ -208,6 +216,7 @@ OPENAI_MODEL=gpt-5.5
 OPENAI_REASONING_EFFORT=medium
 OPENAI_STREAM_TIMEOUT_MS=45000
 OPENAI_TRANSCRIBE_MODEL=gpt-4o-transcribe
+SHIFTLINK_DATA_MODE=demo
 ```
 
 Optional for production-style Maps configuration:
@@ -291,9 +300,12 @@ The `.env` file is ignored by git. Do not commit real API keys. The Google Maps 
 |-- docs/
 |   |-- visual-directions/
 |   |   `-- referral-copilot-mockups.html
-|   `-- superpowers/specs/2026-06-15-referral-copilot-design.md
+|   |-- superpowers/specs/
+|   `-- sql/
 |-- findings/dataset-deep-dive.md
 |-- ideas/README.md
+|-- recommender/
+|-- sql/
 |-- explore.py
 |-- index.html
 |-- package.json
@@ -316,33 +328,29 @@ These are ignored by `.gitignore`.
 
 ## Verification
 
-The current frontend has been verified with:
+Verified on 2026-06-16 in this workspace with:
 
 ```bash
 npm run build
 npm audit --json
+databricks bundle validate
+databricks apps get referral-copilot -o json
 ```
 
-At the time this README was written:
+Current verification results:
 
 - `npm run build` completed successfully.
 - `npm audit --json` reported zero vulnerabilities.
-- `GET /api/health` confirmed the local server sees the OpenAI configuration.
-- `POST /api/chat` returned an OpenAI `gpt-5.5` structured response with a `mapQuery`.
-- `POST /api/chat/stream` emitted OpenAI streaming text deltas and a final metadata event with `dataAccess.mode=demo`.
-- `POST /api/chat` redirects out-of-scope, secret/prompt, and patient-specific clinical advice requests before sending eligible messages to OpenAI.
-- The in-app browser verified a map toolbar search for `hospitals near Jaipur` returned 12 Google Places hospital markers.
-- The in-app browser verified a chatbot request for `hospitals near Udaipur` produced an assistant reply, updated the map query, and rendered 12 Google Places hospital markers.
-- A standalone Playwright smoke test confirmed doctor sign-up shows the context textarea and `Speak` control, blocks account creation until context exists, and saves the profile under the new doctor account.
-- A standalone Playwright smoke test confirmed hospital sign-up captures hospital name, street address, phone number, and optional Facebook page, removes the pseudo facility selector, and renders the saved hospital profile in the exchange view.
-- A standalone Playwright smoke test completed doctor signup, hospital signup, hospital-to-doctor request creation, doctor acceptance, and approved schedule insertion.
-- The local browser rendered the live Google Maps branch with pseudo facility markers and Google Places result markers when a Maps API key was present.
+- `databricks bundle validate` completed successfully for the `dev` target.
+- `databricks apps get referral-copilot -o json` reported the app in `RUNNING` state with active compute.
+- Active Databricks deployment ID: `01f169a5b7eb1517b00c568abf2eeac7`.
+- Active Databricks deployment status: `SUCCEEDED`.
 
 ## Security and Privacy Notes
 
 - `.env` is ignored by git.
 - The Google Maps API key should be restricted in Google Cloud before any public deployment.
-- The prototype does not collect patient information.
+- No patient-record workflow is implemented; users should not enter PHI into the prototype.
 - The prototype does not send email.
 - The prototype does not persist users, doctor context, shortlists, schedules, or hospital decisions outside the browser.
 - Prototype passwords are stored in localStorage and must be replaced with real authentication before deployment.
@@ -354,8 +362,5 @@ At the time this README was written:
 2. Add backend user accounts, password hashing, session management, and role authorization.
 3. Persist doctor profiles, hospital profiles, chat events, map searches, and schedule requests to `workspace.shiftlink_app`.
 4. Replace the browser-local pseudo facility array with API-loaded results from Databricks SQL.
-5. Implement backend profile, shortlist, schedule, and hospital decision persistence.
-6. Replace pseudo facility data with scored Databricks results.
-7. Add LLM-backed query parsing and evidence scoring.
-8. Add email draft generation.
-9. Add the backend service to the Databricks Apps bundle.
+5. Add evidence scoring backed by real Lakehouse fields.
+6. Add email draft generation only if a send/review workflow is also implemented.
