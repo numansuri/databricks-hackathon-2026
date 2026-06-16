@@ -46,9 +46,24 @@ export function applyStateFilter(districts, preferredStatesNorm = []) {
   return inState.length ? inState : districts;
 }
 
+const facilityById = (() => {
+  const map = {};
+  for (const f of facilitiesSlice) map[f.id] = f;
+  return map;
+})();
+
+// The recommender's NAMED candidate host clinics for a district, enriched to the
+// full canonical facility object by facility_id (Codex: only the recommender's
+// candidate_clinics may become outreach targets — a greenfield district with an
+// empty candidate_clinics list must NOT surface arbitrary facilities). Returns []
+// for greenfield, so the UI shows the honest "no credible host yet" line.
+export function enrichClinics(candidateClinics = []) {
+  return candidateClinics.map((c) => facilityById[c.facility_id]).filter(Boolean);
+}
+
 // Host clinics for a district from the canonical facility slice, filtered by
-// districtKey (the pre-baked order is kept; optional client-side facility filters
-// never change the district need score). onboarding §3.
+// districtKey (kept for browse/no-signal fallback paths). Optional client-side
+// facility filters never change the district need score. onboarding §3.
 export function facilitiesForDistrict(districtKey, prefs = {}) {
   return facilitiesSlice
     .filter((f) => f.districtKey === districtKey)

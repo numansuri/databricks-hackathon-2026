@@ -33,11 +33,12 @@ import {
   X
 } from "lucide-react";
 import seedFacilities from "../public/gold/facilities_seed.json";
+import { buildSchedule, buildTemplateNarrative, ASSUMPTIONS, KILLER_LINE } from "./scheduler.js";
 import { CANONICAL_SPECIALTIES, labelFor, resolveSpecialty } from "./specialties.js";
 import {
   recommendationFor,
   applyStateFilter,
-  facilitiesForDistrict,
+  enrichClinics,
   districtContext,
   signalFor,
   bundledStates
@@ -73,14 +74,22 @@ const weekDays = [
   "Fri, Jun 19"
 ];
 
-const requestStatusMeta = {
-  planned: { label: "Planned", className: "statusPlanned" },
-  pending: { label: "Pending", className: "statusPending" },
-  approved: { label: "Approved", className: "statusApproved" },
-  denied: { label: "Denied", className: "statusDenied" },
-  confirmed: { label: "Confirmed", className: "statusApproved" },
-  pending_approval: { label: "Needs approval", className: "statusPending" }
-};
+// The scheduler engine reasons in ISO dates (Mon-Fri 2026-06-15..06-19); the UI
+// shows the human `weekDays` labels. These two arrays are positionally aligned so
+// the prefs date inputs (clamped to the week) and the proposed-week strip can map
+// between them without any Date parsing (engine stays the single source of truth).
+const weekIso = [
+  "2026-06-15",
+  "2026-06-16",
+  "2026-06-17",
+  "2026-06-18",
+  "2026-06-19"
+];
+
+function isoToWeekLabel(iso) {
+  const idx = weekIso.indexOf(iso);
+  return idx === -1 ? iso : weekDays[idx];
+}
 
 function readJson(key, fallback) {
   try {
@@ -109,6 +118,10 @@ function getOutreachKey(userId) {
 
 function getScheduleKey(userId) {
   return `referralCopilotDoctorSchedule:${userId}`;
+}
+
+function getScheduleRunKey(userId) {
+  return `referralCopilotScheduleRun:${userId}`;
 }
 
 function getDisplayName(user) {
@@ -161,11 +174,13 @@ function migrateV1Profile(v1) {
   if (!v1 || v1.schemaVersion === 2) return v1;
   const raw = v1.tags?.specialties?.[0] || v1.rawText || "";
   const res = resolveSpecialty(raw);
-  let canonical = null;
-  if ((res.status === "matched" || res.status === "confirm" || res.status === "ambiguous") && res.candidates.length) {
-    canonical = res.candidates[0];
+  // Only auto-migrate a CONFIDENT resolution (matched/confirm). Ambiguous or
+  // blocked legacy text is NEVER silently coerced to a canonical (Codex) — return
+  // null so DoctorApp falls back to Onboarding and the doctor re-picks honestly.
+  if ((res.status !== "matched" && res.status !== "confirm") || !res.candidates.length) {
+    return null;
   }
-  if (!canonical) canonical = "internal_medicine";
+  const canonical = res.candidates[0];
   const regions = Array.isArray(v1.tags?.regions) ? v1.tags.regions : [];
   return createDoctorProfileV2(
     v1.doctorId,
@@ -323,8 +338,11 @@ function DoctorApp({ user, onLogout, theme, onToggleTheme }) {
     const parsed = JSON.parse(saved);
     if (parsed && parsed.schemaVersion !== 2) {
       const migrated = migrateV1Profile(parsed);
-      saveJson(profileKey, migrated);
-      return migrated;
+      if (migrated) {
+        saveJson(profileKey, migrated);
+        return migrated;
+      }
+      return null; // unmigratable legacy profile -> Onboarding re-pick (no fabrication)
     }
     return parsed;
   });
@@ -337,7 +355,17 @@ function DoctorApp({ user, onLogout, theme, onToggleTheme }) {
   const [shortlist, setShortlist] = useState(facilities[0] ? [facilities[0].id] : []);
   const [schedule, setSchedule] = useState(() => readJson(scheduleKey, []));
   const [outreachRequests, setOutreachRequests] = useState(() => readJson(outreachKey, []));
+  // Latest deterministic scheduler run (scheduler-final §4/§6): the engine output
+  // plus the narrative and the prefs that produced it. Read on mount, re-persisted
+  // on every build and on every approval (which flips `approved` on proposals).
+  const [scheduleRun, setScheduleRun] = useState(() => readJson(getScheduleRunKey(user.id), null));
+  // Bumped by the MapWorkspace "Build my week" button so the SchedulerPanel runs
+  // with its current prefs form state (the panel owns the form; this just pokes it).
+  const [buildTrigger, setBuildTrigger] = useState(0);
   const draftingFacilitiesRef = useRef(new Set());
+  // Synchronous in-flight guard for confirmProposals: blocks a second click landing
+  // in the SAME render frame (before React re-renders) from double-writing a visit.
+  const confirmingRequestIdsRef = useRef(new Set());
 
   // MERGE (never replace) canonical facility objects, deduped by id, so a clinic
   // shown in Recommend is always resolvable by outreach/scheduler (§7.1).
@@ -381,23 +409,6 @@ function DoctorApp({ user, onLogout, theme, onToggleTheme }) {
     setShortlist((current) =>
       current.includes(id) ? current.filter((item) => item !== id) : [...current, id]
     );
-  }
-
-  // Local schedule add (no two-way request — the hospital flow is cut). The
-  // scheduler's confirmProposals is the primary clinic-reply -> confirmed path.
-  function addSchedule(entry, options = {}) {
-    const nextEntry = {
-      ...entry,
-      id: crypto.randomUUID(),
-      requestId: options.requestId || entry.requestId || "",
-      status: options.status || entry.status || "planned",
-      approvalStatus: options.approvalStatus || entry.approvalStatus || "doctor_approved",
-      calendarStatus: options.calendarStatus || entry.calendarStatus || "calendar_event_created",
-      source: options.source || entry.source || "manual"
-    };
-    updateSchedule((current) => [nextEntry, ...current]);
-    setActiveView("schedule");
-    return nextEntry;
   }
 
   async function createOutreachDraft(facilityId) {
@@ -471,7 +482,7 @@ function DoctorApp({ user, onLogout, theme, onToggleTheme }) {
         body: JSON.stringify({
           facility: mapFacilityForApi(facility),
           doctor,
-          district_need: facility.match || null,
+          district_need: null,
           preferred_channel: null
         })
       });
@@ -517,41 +528,169 @@ function DoctorApp({ user, onLogout, theme, onToggleTheme }) {
     );
   }
 
-  function approveClinicTime(requestId, proposedTime) {
-    const request = outreachRequests.find((item) => item.id === requestId);
-    if (!request) return;
-    const facility = facilities.find((item) => item.id === request.facilityId);
-    if (!facility) return;
+  // ── Scheduler: build-my-week (scheduler-final §4) ─────────────────────────
+  // Assemble the engine's three inputs from live app state and run the pure,
+  // deterministic engine. clinicReplies join `facilities` for lat/lng/name (null
+  // coords pass straight through to the engine's `unknown_location` band); confirmed
+  // schedule entries are injected as immovable anchors alongside the prefs form's
+  // manual commitments. The output + narrative + prefs persist as the latest run.
+  function runScheduler(prefs, manualAnchors = []) {
+    const clinicReplies = outreachRequests
+      .filter((request) => request.status === "reply_received")
+      .map((request) => {
+        const facility = facilities.find((item) => item.id === request.facilityId);
+        return {
+          requestId: request.id,
+          facilityId: request.facilityId,
+          facilityName: facility?.name || "Clinic",
+          lat: typeof facility?.lat === "number" ? facility.lat : null,
+          lng: typeof facility?.lng === "number" ? facility.lng : null,
+          proposedTimes: request.proposedTimes || []
+        };
+      });
 
-    addSchedule(
-      {
-        facilityId: request.facilityId,
-        date: proposedTime.date,
-        time: proposedTime.time,
-        purpose: `${request.channel} follow-up with ${facility.name}`
-      },
-      {
-        createRequest: false,
-        status: "confirmed",
-        approvalStatus: "doctor_approved",
-        calendarStatus: "calendar_event_created",
-        source: "clinic_reply"
-      }
+    // Confirmed visits already on the calendar become immovable anchors so the
+    // engine plans around them; enrich each with its facility's coords.
+    const scheduleAnchors = schedule
+      .filter((entry) => entry.status === "confirmed")
+      .map((entry) => {
+        const facility = facilities.find((item) => item.id === entry.facilityId);
+        return {
+          id: entry.id,
+          facilityName: facility?.name || entry.facilityName || entry.purpose || "Confirmed visit",
+          date: entry.date,
+          time: entry.time,
+          lat: typeof facility?.lat === "number" ? facility.lat : null,
+          lng: typeof facility?.lng === "number" ? facility.lng : null,
+          source: "existing_schedule"
+        };
+      });
+
+    const fixedAnchors = [...scheduleAnchors, ...(manualAnchors || [])];
+    const result = buildSchedule({ clinicReplies, fixedAnchors, prefs });
+    const narrative = buildTemplateNarrative(result);
+    const run = {
+      ranAt: new Date().toISOString(),
+      prefs,
+      manualAnchors: manualAnchors || [],
+      proposals: result.proposals,
+      assumptions: result.assumptions,
+      narrative
+    };
+    saveJson(getScheduleRunKey(user.id), run);
+    setScheduleRun(run);
+    return run;
+  }
+
+  // THE app's single confirmation writer (scheduler-final §4, integration-spec
+  // §7.3/D23/D24). Idempotent + one batched transaction: resolves ids to not-yet-
+  // approved ACCEPTED proposals, drops any whose request is already confirmed or
+  // already has a schedule entry, then writes ONCE to schedule, ONCE to outreach,
+  // and ONCE to the run. Never loops a per-slot writer.
+  //
+  // Idempotency is enforced at THREE layers so re-clicks and double Approve-All are
+  // always safe: (1) a synchronous in-flight ref guard blocks a second click in the
+  // SAME render frame; (2) the closed-over status/schedule guards skip already-done
+  // work across renders; (3) the schedule write itself de-dupes by requestId inside
+  // the functional updater against the freshest list — so even a guard slip can't
+  // append a duplicate clinic_reply entry.
+  function confirmProposals(ids) {
+    if (!scheduleRun || !Array.isArray(scheduleRun.proposals)) return;
+    const idSet = new Set(ids || []);
+    const confirmedRequestIds = new Set(
+      outreachRequests
+        .filter((request) => request.status === "appointment_confirmed")
+        .map((request) => request.id)
+    );
+    const scheduledRequestIds = new Set(
+      schedule.map((entry) => entry.requestId).filter(Boolean)
     );
 
-    persistOutreachRequests(
-      outreachRequests.map((item) =>
-        item.id === requestId
+    const toConfirm = scheduleRun.proposals.filter(
+      (proposal) =>
+        idSet.has(proposal.id) &&
+        proposal.verdict === "accepted" &&
+        proposal.approved !== true &&
+        proposal.slot &&
+        proposal.requestId != null &&
+        !confirmedRequestIds.has(proposal.requestId) &&
+        !scheduledRequestIds.has(proposal.requestId) &&
+        !confirmingRequestIdsRef.current.has(proposal.requestId)
+    );
+    if (toConfirm.length === 0) return; // fully idempotent: nothing new to write
+
+    // Claim these requestIds synchronously so a same-frame re-click sees them taken.
+    for (const proposal of toConfirm) confirmingRequestIdsRef.current.add(proposal.requestId);
+
+    // One schedule write — the §7.2 clinic-reply entry shape; every entry carries
+    // requestId + slotLabel. The updater de-dupes against the freshest list so a
+    // requestId already present (any earlier confirm) is never written twice.
+    const slotByRequestId = new Map(
+      toConfirm.map((proposal) => [proposal.requestId, proposal.slot])
+    );
+    updateSchedule((current) => {
+      const present = new Set(current.map((entry) => entry.requestId).filter(Boolean));
+      const newEntries = toConfirm
+        .filter((proposal) => !present.has(proposal.requestId))
+        .map((proposal) => ({
+          id: crypto.randomUUID(),
+          facilityId: proposal.facilityId,
+          requestId: proposal.requestId,
+          date: proposal.slot.date,
+          time: proposal.slot.time,
+          purpose: proposal.purpose,
+          status: "confirmed",
+          approvalStatus: "doctor_approved",
+          calendarStatus: "calendar_event_created",
+          source: "clinic_reply",
+          slotLabel: proposal.slot.label
+        }));
+      return [...newEntries, ...current];
+    });
+
+    // One outreach write — flip every confirmed request in a single pass.
+    persistOutreachRequests((current) =>
+      current.map((request) =>
+        slotByRequestId.has(request.id) && request.status !== "appointment_confirmed"
           ? {
-              ...item,
+              ...request,
               status: "appointment_confirmed",
               schedulingApprovalStatus: "doctor_approved",
-              approvedTime: proposedTime,
+              approvedTime: slotByRequestId.get(request.id),
               confirmedAt: new Date().toISOString()
             }
-          : item
+          : request
       )
     );
+
+    // One run write — mark the confirmed proposals approved and re-persist.
+    const approvedIds = new Set(toConfirm.map((proposal) => proposal.id));
+    setScheduleRun((current) => {
+      if (!current) return current;
+      const next = {
+        ...current,
+        proposals: current.proposals.map((proposal) =>
+          approvedIds.has(proposal.id) ? { ...proposal, approved: true } : proposal
+        )
+      };
+      saveJson(getScheduleRunKey(user.id), next);
+      return next;
+    });
+
+    // Release the in-flight claim once the state writes have been queued.
+    for (const proposal of toConfirm) confirmingRequestIdsRef.current.delete(proposal.requestId);
+  }
+
+  function approveProposedVisit(id) {
+    confirmProposals([id]);
+  }
+
+  function approveAllProposedVisits() {
+    if (!scheduleRun || !Array.isArray(scheduleRun.proposals)) return;
+    const ids = scheduleRun.proposals
+      .filter((proposal) => proposal.verdict === "accepted" && proposal.approved !== true)
+      .map((proposal) => proposal.id);
+    confirmProposals(ids);
   }
 
   function removeSchedule(id) {
@@ -586,7 +725,6 @@ function DoctorApp({ user, onLogout, theme, onToggleTheme }) {
           shortlist={shortlist}
           toggleShortlist={toggleShortlist}
           schedule={schedule}
-          addSchedule={addSchedule}
           removeSchedule={removeSchedule}
           profile={profile}
           mergeFacilities={mergeFacilities}
@@ -594,7 +732,11 @@ function DoctorApp({ user, onLogout, theme, onToggleTheme }) {
           createOutreachDraft={createOutreachDraft}
           updateOutreachDraft={updateOutreachDraft}
           approveOutreach={approveOutreach}
-          approveClinicTime={approveClinicTime}
+          scheduleRun={scheduleRun}
+          runScheduler={runScheduler}
+          approveProposedVisit={approveProposedVisit}
+          approveAllProposedVisits={approveAllProposedVisits}
+          buildTrigger={buildTrigger}
         />
         <MapWorkspace
           activeView={activeView}
@@ -604,7 +746,10 @@ function DoctorApp({ user, onLogout, theme, onToggleTheme }) {
           toggleShortlist={toggleShortlist}
           schedule={schedule}
           createOutreachDraft={createOutreachDraft}
-          onBuildWeek={() => setActiveView("schedule")}
+          onBuildWeek={() => {
+            setActiveView("schedule");
+            setBuildTrigger((n) => n + 1);
+          }}
         />
       </main>
     </div>
@@ -975,7 +1120,7 @@ function TopBar({
   onToggleTheme
 }) {
   const tabs = [
-    { id: "search", label: "Search", icon: Search },
+    { id: "search", label: "Recommend", icon: Search },
     { id: "outreach", label: `Outreach (${approvalCount})`, icon: MessageSquareText },
     { id: "schedule", label: "Schedule", icon: CalendarDays },
     { id: "shortlist", label: `Shortlist (${shortlistCount})`, icon: Star }
@@ -1030,7 +1175,7 @@ function LeftPanel(props) {
     return <OutreachPanel {...props} />;
   }
   if (props.activeView === "schedule") {
-    return <SchedulePanel {...props} />;
+    return <SchedulerPanel {...props} />;
   }
   if (props.activeView === "shortlist") {
     return <ShortlistPanel {...props} />;
@@ -1056,7 +1201,11 @@ function DistrictCard({
 }) {
   const tier = district.priority_tier;
   const ctx = districtContext(district.districtKey);
-  const hosts = expanded ? facilitiesForDistrict(district.districtKey) : [];
+  // Only the recommender's NAMED candidate hosts may become outreach targets — a
+  // greenfield district (empty candidate_clinics) shows the honest "no host yet"
+  // line and never surfaces arbitrary facilities (Codex). enrichClinics resolves
+  // each candidate_clinic facility_id to the full canonical object.
+  const hosts = expanded ? enrichClinics(district.candidate_clinics) : [];
   return (
     <article className={`districtCard ${expanded ? "expanded" : ""}`}>
       <button type="button" className="districtHead" onClick={onToggle}>
@@ -1151,7 +1300,10 @@ function SearchPanel({
 
   function toggleExpand(districtKey) {
     setExpanded((current) => (current === districtKey ? null : districtKey));
-    const hosts = facilitiesForDistrict(districtKey);
+    // Merge only the recommender's named candidate hosts for this district so
+    // outreach/scheduler can resolve them by id (greenfield -> nothing merged).
+    const district = result.districts.find((d) => d.districtKey === districtKey);
+    const hosts = enrichClinics(district?.candidate_clinics);
     if (hosts.length) mergeFacilities(hosts);
   }
 
@@ -1360,7 +1512,7 @@ function OutreachPanel({
   createOutreachDraft,
   updateOutreachDraft,
   approveOutreach,
-  approveClinicTime
+  setActiveView
 }) {
   const selectedFacility = facilities.find((facility) => facility.id === selectedFacilityId) || facilities[0] || null;
 
@@ -1552,14 +1704,25 @@ function OutreachPanel({
                   <div className="replyBox">
                     <strong>Clinic reply summary</strong>
                     <p>{request.replySummary}</p>
-                    <div className="slotGrid">
+                    <ul className="proposedTimesList">
                       {request.proposedTimes.map((time) => (
-                        <button key={`${request.id}-${time.label}`} onClick={() => approveClinicTime(request.id, time)}>
+                        <li key={`${request.id}-${time.label}`}>
                           <CalendarCheck size={15} />
-                          Approve {time.label}
-                        </button>
+                          {time.label}
+                        </li>
                       ))}
-                    </div>
+                    </ul>
+                    <p className="replyHandoff">
+                      Clinic replied — build your week in Schedule to fit these slots around your other visits.
+                    </p>
+                    <button
+                      type="button"
+                      className="primaryButton"
+                      onClick={() => setActiveView("schedule")}
+                    >
+                      <CalendarDays size={16} />
+                      Build your week in Schedule
+                    </button>
                   </div>
                 )}
                 {request.status === "appointment_confirmed" && (
@@ -1584,114 +1747,153 @@ function OutreachPanel({
 }
 
 
-function ScheduleRequestCard({
-  request,
-  onApprove,
-  onDeny,
-  title = request.doctorName,
-  subtitle = request.doctorEmail,
-  approveLabel = "Approve",
-  denyLabel = "Deny"
-}) {
-  const meta = requestStatusMeta[request.status] || requestStatusMeta.pending;
-
-  return (
-    <article className="requestCard">
-      <div className="requestHeader">
-        <div>
-          <h3>{title}</h3>
-          <p>{subtitle}</p>
-        </div>
-        <span className={`requestStatus ${meta.className}`}>{meta.label}</span>
-      </div>
-      <div className="requestDetails">
-        <span>
-          <CalendarDays size={15} />
-          {request.visitDate}
-        </span>
-        <span>
-          <Clock3 size={15} />
-          {request.visitTime}
-        </span>
-      </div>
-      <p className="requestPurpose">{request.purpose}</p>
-      {request.status === "pending" && onApprove && onDeny && (
-        <div className="requestActions">
-          <button className="approveButton" onClick={onApprove}>
-            <Check size={16} />
-            {approveLabel}
-          </button>
-          <button className="denyButton" onClick={onDeny}>
-            <X size={16} />
-            {denyLabel}
-          </button>
-        </div>
-      )}
-    </article>
-  );
-}
-
-function SchedulePanel({
+// Scheduler tab primary surface (scheduler-final §4, S4). Owns the prefs form +
+// fixed-commitments local state, runs the deterministic engine via `runScheduler`,
+// and renders the assumptions banner, the proposed-week strip, the Constraint
+// Ledger over EVERY replied clinic, and the per-clinic ProposalCards. It NEVER
+// confirms a visit itself — approval goes through confirmProposals (the single
+// writer), exposed here as approveProposedVisit / approveAllProposedVisits.
+function SchedulerPanel({
   facilities,
   schedule,
-  addSchedule,
-  removeSchedule,
-  requests = [],
-  incomingHospitalRequests = [],
-  onAcceptHospitalRequest,
-  onDenyHospitalRequest
+  outreachRequests,
+  scheduleRun,
+  runScheduler,
+  approveProposedVisit,
+  approveAllProposedVisits,
+  createOutreachDraft,
+  buildTrigger
 }) {
-  const [facilityId, setFacilityId] = useState(facilities[0]?.id ?? "");
-  const [date, setDate] = useState("2026-06-17");
-  const [time, setTime] = useState("09:30");
-  const [purpose, setPurpose] = useState("Volunteer screening camp");
-  const pendingHospitalRequests = incomingHospitalRequests.filter((request) => request.status === "pending");
+  const repliedCount = outreachRequests.filter((r) => r.status === "reply_received").length;
+
+  // Default homeBase: the doctor's first confirmed-visit facility, else facilities[0].
+  const firstConfirmedFacilityId = useMemo(() => {
+    const confirmed = schedule.find((entry) => entry.status === "confirmed" && entry.facilityId);
+    return confirmed?.facilityId || facilities[0]?.id || "";
+  }, [schedule, facilities]);
+
+  const seeded = scheduleRun?.prefs || null;
+  const [homeBaseId, setHomeBaseId] = useState(
+    () => seeded?.homeBase?.id || firstConfirmedFacilityId
+  );
+  const [windowStart, setWindowStart] = useState(() => seeded?.dateWindow?.start || weekIso[0]);
+  const [windowEnd, setWindowEnd] = useState(
+    () => seeded?.dateWindow?.end || weekIso[weekIso.length - 1]
+  );
+  const [maxVisitsPerDay, setMaxVisitsPerDay] = useState(() => seeded?.maxVisitsPerDay ?? 2);
+  const [timeOfDayPref, setTimeOfDayPref] = useState(() => seeded?.timeOfDayPref || "any");
+  const [mustBeBackBy, setMustBeBackBy] = useState(() => seeded?.mustBeBackBy || "18:00");
+  const [defaultVisitMinutes, setDefaultVisitMinutes] = useState(
+    () => seeded?.defaultVisitMinutes ?? 120
+  );
+  const [notes, setNotes] = useState(() => seeded?.notes || "");
+
+  // Manual fixed commitments (ward round, etc.). "No location" -> pure time block.
+  const [commitments, setCommitments] = useState(() => scheduleRun?.manualAnchors || []);
+  const [draftCommitment, setDraftCommitment] = useState({
+    facilityId: "",
+    date: weekIso[0],
+    time: "09:00",
+    label: "Ward round"
+  });
+
+  // If the homeBase facility is dropped from state, fall back to a valid id.
+  useEffect(() => {
+    if (homeBaseId && !facilities.some((f) => f.id === homeBaseId)) {
+      setHomeBaseId(firstConfirmedFacilityId);
+    } else if (!homeBaseId && firstConfirmedFacilityId) {
+      setHomeBaseId(firstConfirmedFacilityId);
+    }
+  }, [facilities, homeBaseId, firstConfirmedFacilityId]);
+
+  function assemblePrefs() {
+    const home = facilities.find((f) => f.id === homeBaseId) || null;
+    return {
+      homeBase: home
+        ? { id: home.id, lat: home.lat ?? null, lng: home.lng ?? null, city: home.city }
+        : { id: "", lat: null, lng: null },
+      dateWindow: { start: windowStart, end: windowEnd },
+      maxVisitsPerDay: Number(maxVisitsPerDay) || 2,
+      timeOfDayPref,
+      mustBeBackBy,
+      defaultVisitMinutes: Number(defaultVisitMinutes) || 120,
+      notes
+    };
+  }
+
+  function assembleManualAnchors() {
+    return commitments.map((c, i) => {
+      const facility = c.facilityId ? facilities.find((f) => f.id === c.facilityId) : null;
+      return {
+        id: c.id || `commitment-${i}`,
+        facilityName: facility?.name || c.label || "Commitment",
+        date: c.date,
+        time: c.time,
+        durationMinutes: Number(defaultVisitMinutes) || 120,
+        lat: facility && typeof facility.lat === "number" ? facility.lat : null,
+        lng: facility && typeof facility.lng === "number" ? facility.lng : null,
+        source: "manual"
+      };
+    });
+  }
+
+  function handleBuild() {
+    runScheduler(assemblePrefs(), assembleManualAnchors());
+  }
+
+  // The MapWorkspace "Build my week" button bumps buildTrigger; run on each bump
+  // (skip the initial mount so we don't auto-run before the doctor sets prefs).
+  const lastTriggerRef = useRef(buildTrigger);
+  useEffect(() => {
+    if (buildTrigger !== lastTriggerRef.current) {
+      lastTriggerRef.current = buildTrigger;
+      handleBuild();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [buildTrigger]);
+
+  function addCommitment() {
+    if (!draftCommitment.date || !draftCommitment.time) return;
+    setCommitments((current) => [
+      ...current,
+      { ...draftCommitment, id: crypto.randomUUID() }
+    ]);
+  }
+
+  function removeCommitment(id) {
+    setCommitments((current) => current.filter((c) => c.id !== id));
+  }
+
+  const proposals = scheduleRun?.proposals || [];
+  const accepted = proposals.filter((p) => p.verdict === "accepted");
+  const needsNew = proposals.filter((p) => p.verdict === "needs_new_times");
+  const acceptedUnapproved = accepted.filter((p) => p.approved !== true);
+  // Ledger order: accepted first, then needs_new_times (scheduler-final §4).
+  const ledgerOrder = [...accepted, ...needsNew];
 
   return (
     <aside className="sidePanel schedulePanel">
       <div className="panelHeader">
         <div>
           <p className="eyebrow">Schedule</p>
-          <h2>Visit builder</h2>
+          <h2>Build my week</h2>
         </div>
-        <span className="countBadge">{schedule.length} planned</span>
+        <span className="countBadge">{repliedCount} clinic{repliedCount === 1 ? "" : "s"} replied</span>
       </div>
-      <section className="incomingRequestList">
-        <div className="requestSectionHeader">
-          <h3>Hospital requests</h3>
-          <span>{pendingHospitalRequests.length} pending</span>
-        </div>
-        {incomingHospitalRequests.length ? (
-          incomingHospitalRequests.map((request) => (
-            <ScheduleRequestCard
-              key={request.id}
-              request={request}
-              title={request.facilityName}
-              subtitle={`Requested by ${request.requestedByName || request.facilityName}`}
-              approveLabel="Accept"
-              denyLabel="Decline"
-              onApprove={() => onAcceptHospitalRequest(request)}
-              onDeny={() => onDenyHospitalRequest(request)}
-            />
-          ))
-        ) : (
-          <div className="emptyState compactEmpty">
-            <Hospital size={24} />
-            <h3>No hospital requests</h3>
-            <p>When a hospital requests your time, you can accept it into this schedule.</p>
-          </div>
-        )}
-      </section>
-      <form
-        className="builderForm"
-        onSubmit={(event) => {
-          event.preventDefault();
-          addSchedule({ facilityId, date, time, purpose });
-        }}
-      >
+
+      <div className="approvalIntro">
+        <AlertCircle size={17} />
+        <p>
+          The engine plans only over slots clinics already proposed — it never invents a time or
+          assumes a clinic is free. Every visit still needs your approval.
+        </p>
+      </div>
+
+      <div className="builderForm">
         <label>
-          Facility
-          <select value={facilityId} onChange={(event) => setFacilityId(event.target.value)}>
+          Home base
+          <select value={homeBaseId} onChange={(event) => setHomeBaseId(event.target.value)}>
+            {facilities.length === 0 ? <option value="">No facilities yet</option> : null}
             {facilities.map((facility) => (
               <option key={facility.id} value={facility.id}>
                 {facility.name}
@@ -1701,47 +1903,349 @@ function SchedulePanel({
         </label>
         <div className="formSplit">
           <label>
-            Date
-            <input type="date" value={date} onChange={(event) => setDate(event.target.value)} />
+            Window start
+            <select value={windowStart} onChange={(event) => setWindowStart(event.target.value)}>
+              {weekIso.map((iso) => (
+                <option key={iso} value={iso}>
+                  {isoToWeekLabel(iso)}
+                </option>
+              ))}
+            </select>
           </label>
           <label>
-            Time
-            <input type="time" value={time} onChange={(event) => setTime(event.target.value)} />
+            Window end
+            <select value={windowEnd} onChange={(event) => setWindowEnd(event.target.value)}>
+              {weekIso.map((iso) => (
+                <option key={iso} value={iso}>
+                  {isoToWeekLabel(iso)}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <div className="formSplit">
+          <label>
+            Max visits / day
+            <input
+              type="number"
+              min={1}
+              max={5}
+              value={maxVisitsPerDay}
+              onChange={(event) => setMaxVisitsPerDay(event.target.value)}
+            />
+          </label>
+          <label>
+            Time of day
+            <select value={timeOfDayPref} onChange={(event) => setTimeOfDayPref(event.target.value)}>
+              <option value="any">Any time</option>
+              <option value="morning">Mornings</option>
+              <option value="afternoon">Afternoons</option>
+            </select>
+          </label>
+        </div>
+        <div className="formSplit">
+          <label>
+            Back home by
+            <input
+              type="time"
+              value={mustBeBackBy}
+              onChange={(event) => setMustBeBackBy(event.target.value)}
+            />
+          </label>
+          <label>
+            Visit length (min)
+            <input
+              type="number"
+              min={30}
+              step={15}
+              value={defaultVisitMinutes}
+              onChange={(event) => setDefaultVisitMinutes(event.target.value)}
+            />
           </label>
         </div>
         <label>
-          Purpose
-          <input value={purpose} onChange={(event) => setPurpose(event.target.value)} />
+          Notes
+          <textarea
+            className="draftTextarea"
+            rows={2}
+            value={notes}
+            onChange={(event) => setNotes(event.target.value)}
+            placeholder="Optional. Shown to you as-is; it does not change the schedule."
+          />
         </label>
-        <button className="primaryButton" type="submit">
-          <Plus size={17} />
-          Add visit
+
+        <div className="commitmentsSection">
+          <h3>Fixed commitments</h3>
+          <p className="commitmentsHint">
+            Ward rounds, existing meetings — the engine plans around these and never moves them.
+          </p>
+          <div className="formSplit">
+            <label>
+              Where
+              <select
+                value={draftCommitment.facilityId}
+                onChange={(event) =>
+                  setDraftCommitment((c) => ({ ...c, facilityId: event.target.value }))
+                }
+              >
+                <option value="">No location — time block only</option>
+                {facilities.map((facility) => (
+                  <option key={facility.id} value={facility.id}>
+                    {facility.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              Day
+              <select
+                value={draftCommitment.date}
+                onChange={(event) => setDraftCommitment((c) => ({ ...c, date: event.target.value }))}
+              >
+                {weekIso.map((iso) => (
+                  <option key={iso} value={iso}>
+                    {isoToWeekLabel(iso)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="formSplit">
+            <label>
+              Time
+              <input
+                type="time"
+                value={draftCommitment.time}
+                onChange={(event) => setDraftCommitment((c) => ({ ...c, time: event.target.value }))}
+              />
+            </label>
+            <label>
+              Label
+              <input
+                value={draftCommitment.label}
+                onChange={(event) => setDraftCommitment((c) => ({ ...c, label: event.target.value }))}
+              />
+            </label>
+          </div>
+          <button type="button" className="ghostButton" onClick={addCommitment}>
+            <Plus size={15} /> Add commitment
+          </button>
+          {commitments.length ? (
+            <ul className="commitmentsList">
+              {commitments.map((c) => {
+                const facility = c.facilityId
+                  ? facilities.find((f) => f.id === c.facilityId)
+                  : null;
+                return (
+                  <li key={c.id}>
+                    <span>
+                      {isoToWeekLabel(c.date)} · {c.time} ·{" "}
+                      {facility?.name || c.label || "Time block"}
+                    </span>
+                    <button title="Remove commitment" onClick={() => removeCommitment(c.id)}>
+                      <Trash2 size={14} />
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : null}
+        </div>
+
+        <button className="primaryButton" type="button" onClick={handleBuild}>
+          <Sparkles size={17} />
+          Build my week
         </button>
-      </form>
-      <div className="plannedList">
-        {schedule.map((entry) => {
-          const facility = facilities.find((item) => item.id === entry.facilityId);
-          const request = requests.find((item) => item.id === entry.requestId);
-          const meta = requestStatusMeta[request?.status || entry.status || "planned"] || requestStatusMeta.planned;
-          const facilityName = facility?.name || request?.facilityName || entry.facilityName || "Hospital visit";
-          return (
-            <div className="plannedItem" key={entry.id}>
-              <div>
-                <h3>{facilityName}</h3>
-                <p>
-                  {entry.date} · {entry.time}
-                </p>
-                <span className={`requestStatus ${meta.className}`}>{meta.label}</span>
-                <span>{entry.purpose}</span>
-              </div>
-              <button title="Remove visit" onClick={() => removeSchedule(entry.id)}>
-                <Trash2 size={16} />
-              </button>
-            </div>
-          );
-        })}
       </div>
+
+      {scheduleRun ? (
+        <>
+          {scheduleRun.narrative?.tradeoffSummary ? (
+            <div className="tradeoffSummary">
+              <p>{scheduleRun.narrative.tradeoffSummary}</p>
+            </div>
+          ) : null}
+
+          <div className="assumptionsBanner">
+            <p className="assumptionsTitle">
+              <ShieldCheck size={15} /> Assumptions this week is built on
+            </p>
+            <ul>
+              {(scheduleRun.assumptions || ASSUMPTIONS).map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+            <p className="killerLine">{KILLER_LINE}</p>
+          </div>
+
+          {acceptedUnapproved.length > 0 ? (
+            <div className="approvalStack">
+              <div className="approvalIntro">
+                <CalendarCheck size={17} />
+                <p>
+                  {accepted.length} visit{accepted.length === 1 ? "" : "s"} fit this week. Approve to
+                  add them to your calendar.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="primaryButton"
+                onClick={approveAllProposedVisits}
+              >
+                <Check size={16} /> Approve all {acceptedUnapproved.length}
+              </button>
+              {accepted.map((proposal) => (
+                <ProposalCard
+                  key={proposal.id}
+                  proposal={proposal}
+                  onApprove={() => approveProposedVisit(proposal.id)}
+                />
+              ))}
+            </div>
+          ) : null}
+
+          <div className="ledgerSection">
+            <div className="requestSectionHeader">
+              <h3>Constraint Ledger</h3>
+              <span>{ledgerOrder.length} clinic{ledgerOrder.length === 1 ? "" : "s"}</span>
+            </div>
+            {ledgerOrder.length ? (
+              ledgerOrder.map((proposal) => (
+                <LedgerCard
+                  key={proposal.id}
+                  proposal={proposal}
+                  onAskNewTimes={() => createOutreachDraft(proposal.facilityId)}
+                />
+              ))
+            ) : (
+              <div className="emptyState compactEmpty">
+                <ClipboardList size={24} />
+                <h3>No clinics replied yet</h3>
+                <p>When a clinic replies with proposed times, build your week to see the ledger.</p>
+              </div>
+            )}
+          </div>
+        </>
+      ) : (
+        <div className="emptyState">
+          <CalendarDays size={28} />
+          <h3>Build your visit week</h3>
+          <p>
+            Set your preferences and any fixed commitments, then build my week to fit the clinics that
+            have replied around them.
+          </p>
+        </div>
+      )}
     </aside>
+  );
+}
+
+// One accepted-clinic card with an Approve button (scheduler-final §4/§6). Approval
+// routes through confirmProposals (the single writer); already-approved proposals
+// show a confirmed note instead of a button.
+function ProposalCard({ proposal, onApprove }) {
+  const slot = proposal.slot;
+  return (
+    <article className="approvalCard proposalCard">
+      <div className="approvalTopline">
+        <div>
+          <span className="statusLabel status-accepted">Fits</span>
+          <h3>{proposal.facilityName}</h3>
+          <p>
+            {slot ? `${isoToWeekLabel(slot.date)} · ${slot.time}–${proposal.endTime}` : ""}
+          </p>
+        </div>
+        <CalendarCheck size={18} />
+      </div>
+      <p className="proposalSlotLabel">{slot?.label}</p>
+      {proposal.approved ? (
+        <div className="confirmedNote">
+          <CalendarCheck size={16} />
+          Confirmed on the calendar
+        </div>
+      ) : (
+        <button type="button" className="primaryButton" onClick={onApprove}>
+          <Check size={16} /> Approve visit
+        </button>
+      )}
+    </article>
+  );
+}
+
+// One Constraint Ledger card per replied clinic (scheduler-final §3.1/§4). Renders
+// for accepted AND needs_new_times clinics: the conflict status, the chosen slot,
+// every considered slot with its outcome, the per-leg travel buffers with bands,
+// the assumptions that applied, and the engine's reason. needs_new_times clinics
+// offer an "Ask for new times" link -> createOutreachDraft (its dedup guard routes
+// to the existing open thread).
+function LedgerCard({ proposal, onAskNewTimes }) {
+  const ledger = proposal.ledger || {};
+  const accepted = proposal.verdict === "accepted";
+  return (
+    <article className={`ledgerCard ${accepted ? "accepted" : "needsNew"}`}>
+      <div className="ledgerHead">
+        <div>
+          <span className={`ledgerVerdict verdict-${proposal.verdict}`}>
+            {accepted ? "Scheduled" : "Needs new times"}
+          </span>
+          <h3>{proposal.facilityName}</h3>
+        </div>
+        <span className={`conflictStatus status-${ledger.conflictStatus}`}>
+          {humanizeTag(ledger.conflictStatus || "")}
+        </span>
+      </div>
+
+      {ledger.reason ? <p className="ledgerReason">{ledger.reason}</p> : null}
+
+      {ledger.chosenSlot ? (
+        <p className="ledgerChosen">
+          <CalendarCheck size={14} /> Chose {ledger.chosenSlot.label} ({ledger.chosenSlot.time}–
+          {ledger.chosenSlot.endTime})
+        </p>
+      ) : null}
+
+      {ledger.consideredSlots?.length ? (
+        <div className="ledgerSlots">
+          <p className="ledgerSubhead">Slots considered</p>
+          <ul>
+            {ledger.consideredSlots.map((slot, i) => (
+              <li key={`${slot.label}-${i}`} className={`slot-${slot.outcome}`}>
+                <strong>{slot.label}</strong>
+                {slot.note ? <span> — {slot.note}</span> : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {ledger.legBuffers?.length ? (
+        <div className="ledgerLegs">
+          <p className="ledgerSubhead">Travel buffers</p>
+          <ul>
+            {ledger.legBuffers.map((leg, i) => (
+              <li key={`${leg.from}-${leg.to}-${i}`}>
+                {leg.from} → {leg.to}:{" "}
+                {leg.band === "unknown_location"
+                  ? "travel not checked"
+                  : `${leg.km != null ? `${leg.km} km · ` : ""}${leg.minutes} min (${leg.band})`}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {ledger.anchorImpact?.note ? (
+        <p className="ledgerAnchor">
+          <Clock3 size={13} /> {ledger.anchorImpact.note}
+        </p>
+      ) : null}
+
+      {!accepted ? (
+        <button type="button" className="ghostButton" onClick={onAskNewTimes}>
+          <Send size={14} /> Ask for new times
+        </button>
+      ) : null}
+    </article>
   );
 }
 
@@ -1966,8 +2470,10 @@ function localOutreachDraft(facility, doctor) {
   const name = (doctor?.name || "").trim() || "Dr.";
   const facName = (facility.name || "").trim() || "your facility";
   const place = (facility.city || "").trim() || (facility.state || "").trim() || "your area";
-  const need = (facility.match || "").trim();
-  const needLine = need ? ` I am especially interested in supporting local needs such as ${need}.` : "";
+  const capabilities = Array.isArray(facility.specialtiesList) ? facility.specialtiesList.slice(0, 3).map(humanizeSpecialtyLabel) : [];
+  const needLine = capabilities.length
+    ? ` I see your team already offers ${capabilities.join(", ")}, and I would be glad to add capacity alongside them.`
+    : "";
 
   const body = `Dear team at ${facName},
 

@@ -2543,3 +2543,424 @@ textarea::placeholder {
 :root[data-theme="dark"] .channelSelector button {
   background: var(--surfaceElevated);
 }
+
+/* ── Shiftlink onboarding picker + Recommend district view ───────────────── */
+.specialtyPicker {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.pickerLabel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+.pickerLabel input {
+  padding: 11px 13px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 0.95rem;
+}
+.pickerSelected {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--mint);
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.pickerOptions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 6px;
+  background: var(--soft);
+}
+.pickerOption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 11px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+  font-size: 0.9rem;
+  transition: border-color 0.15s ease, transform 0.05s ease;
+}
+.pickerOption:hover {
+  border-color: var(--mint);
+}
+.pickerOption.active {
+  border-color: var(--mint);
+  background: var(--mintSoft);
+}
+.pickerEmpty {
+  padding: 8px 4px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.pickerConfirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surfaceWarm);
+  font-size: 0.9rem;
+}
+.pickerExpand {
+  align-self: flex-start;
+}
+.signalBadge {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 3px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.signalHigh {
+  color: #0f6b4f;
+  background: var(--mintSoft);
+}
+.signalMid {
+  color: var(--amber);
+  background: var(--amberSoft);
+}
+.signalNone {
+  color: var(--muted);
+  background: var(--soft);
+  border: 1px solid var(--line);
+}
+
+.panelHint {
+  margin: 4px 0 10px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+.contextCard {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.contextCard h3 {
+  margin: 4px 0 2px;
+}
+
+.stateChips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.chipLabel {
+  font-size: 0.78rem;
+  color: var(--muted);
+  margin-right: 2px;
+}
+.chip {
+  padding: 5px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.chip.active {
+  border-color: var(--exchange);
+  background: var(--exchangeSoft);
+  color: var(--exchange);
+  font-weight: 600;
+}
+
+.districtCard {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+.districtCard.expanded {
+  border-color: var(--mint);
+  box-shadow: var(--shadowLift);
+}
+.districtHead {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  color: var(--ink);
+}
+.districtHead h3 {
+  margin: 0 0 6px;
+  font-size: 1rem;
+}
+.districtBadges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.impactScore {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+  color: var(--mint);
+}
+.impactScore strong {
+  font-size: 1.5rem;
+  line-height: 1;
+}
+.impactScore span {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.tierBadge.tier-critical {
+  color: #fff;
+  background: var(--coral);
+}
+.tierBadge.tier-high {
+  color: var(--coral);
+  background: var(--coralSoft);
+}
+.tierBadge.tier-moderate {
+  color: var(--amber);
+  background: var(--amberSoft);
+}
+.tierBadge.tier-low {
+  color: var(--muted);
+  background: var(--soft);
+}
+.absentBadge {
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 999px;
+  color: var(--coral);
+  background: var(--coralSoft);
+}
+.thinBadge {
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 999px;
+  color: var(--muted);
+  background: var(--soft);
+  border: 1px solid var(--line);
+}
+.drivingNeeds {
+  margin: 0 16px 10px;
+  font-size: 0.84rem;
+  color: var(--ink);
+  line-height: 1.45;
+}
+.districtContext {
+  margin: 0 16px 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--soft);
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+.personaTag {
+  display: inline-block;
+  font-weight: 700;
+  color: var(--exchange);
+  margin-bottom: 4px;
+}
+.otherPriority {
+  margin: 0;
+}
+.hostList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 16px 16px;
+}
+.greenfield {
+  margin: 0 16px 16px;
+  padding: 12px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+/* ── Scheduler: Build-my-week + Constraint Ledger ────────────────────────── */
+.assumptionsBanner {
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surfaceWarm);
+  margin: 12px 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.assumptionsTitle {
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0 0 6px;
+}
+.ledgerSection {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+}
+.proposalCard {
+  border-left: 3px solid var(--mint);
+}
+.proposalSlotLabel {
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin: 2px 0 10px;
+}
+.confirmedNote {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--mint);
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+.ledgerCard {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  padding: 14px 16px;
+}
+.ledgerCard.accepted {
+  border-left: 3px solid var(--mint);
+}
+.ledgerCard.needsNew {
+  border-left: 3px solid var(--amber);
+}
+.ledgerHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.ledgerHead h3 {
+  margin: 4px 0 0;
+  font-size: 0.98rem;
+}
+.ledgerVerdict {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.verdict-accepted {
+  color: var(--mint);
+}
+.verdict-needs_new_times {
+  color: var(--amber);
+}
+.conflictStatus {
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+  color: var(--muted);
+  background: var(--soft);
+  border: 1px solid var(--line);
+}
+.conflictStatus.status-clear {
+  color: #0f6b4f;
+  background: var(--mintSoft);
+  border-color: transparent;
+}
+.conflictStatus.status-no_slots_offered,
+.conflictStatus.status-outside_window,
+.conflictStatus.status-past_back_by,
+.conflictStatus.status-max_per_day_reached,
+.conflictStatus.status-overlap,
+.conflictStatus.status-buffer_violation {
+  color: var(--amber);
+  background: var(--amberSoft);
+  border-color: transparent;
+}
+.ledgerReason {
+  margin: 8px 0;
+  font-size: 0.85rem;
+  color: var(--ink);
+  line-height: 1.45;
+}
+.ledgerChosen {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.84rem;
+  color: var(--mint);
+  font-weight: 600;
+  margin: 4px 0;
+}
+.ledgerSlots,
+.ledgerLegs {
+  margin: 8px 0;
+}
+.ledgerSubhead {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+  margin: 0 0 4px;
+}
+.ledgerSlots ul,
+.ledgerLegs ul {
+  margin: 0;
+  padding-left: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+.ledgerSlots li.slot-chosen strong {
+  color: var(--mint);
+}
+.ledgerSlots li.slot-rejected strong {
+  color: var(--amber);
+}
+.ledgerAnchor {
+  font-size: 0.8rem;
+  color: var(--muted);
+  font-style: italic;
+  margin: 6px 0 0;
+}
+.visitBlock.proposed {
+  border-style: dashed;
+  opacity: 0.92;
+}
+.visitBlock.anchor {
+  background: var(--exchangeSoft);
+}
