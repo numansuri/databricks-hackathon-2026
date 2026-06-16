@@ -3,6 +3,7 @@ bundle:
 
 sync:
   exclude:
+    - .env*
     - recommender/data/*.csv
 
 resources:
@@ -57,10 +58,12 @@ resources:
             value: "45000"
           - name: SHIFTLINK_DATA_MODE
             value: lakehouse
+          - name: DATABRICKS_HOST
+            value: https://dbc-87f85fc5-dc00.cloud.databricks.com
           - name: DATABRICKS_SQL_WAREHOUSE_ID
             value_from: shiftlink_sql_warehouse
           - name: SHIFTLINK_FACILITIES_TABLE
-            value_from: shiftlink_gold_facilities
+            value: workspace.virtue_foundation_enriched.gold_facilities
 
 targets:
   dev:

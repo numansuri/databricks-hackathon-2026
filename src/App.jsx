@@ -515,7 +515,11 @@ function DoctorApp({ user, requests, onCreateScheduleRequest, onUpdateRequestSta
       try {
         const response = await fetch("/api/facilities?limit=24", { cache: "no-store" });
         const data = await response.json();
-        if (!response.ok) throw new Error(data.message || "Lakehouse facilities unavailable");
+        if (!response.ok) {
+          const error = new Error(data.detail || data.message || "Lakehouse facilities unavailable");
+          error.dataAccess = data.dataAccess;
+          throw error;
+        }
         if (cancelled) return;
         const nextFacilities = Array.isArray(data.facilities) && data.facilities.length ? data.facilities : demoFacilities;
         setFacilities(nextFacilities);
@@ -537,9 +541,13 @@ function DoctorApp({ user, requests, onCreateScheduleRequest, onUpdateRequestSta
         if (cancelled) return;
         setFacilities(demoFacilities);
         setFacilityDataAccess({
-          mode: "demo",
-          label: "Local demo facility list",
+          mode: error.dataAccess?.mode || "lakehouse",
+          label: error.dataAccess?.label || "Lakehouse unavailable",
           facilityCount: demoFacilities.length,
+          activeTables: error.dataAccess?.activeTables || [],
+          expectedLakehouseTables: error.dataAccess?.expectedLakehouseTables || [],
+          plannedAppPersistenceTables: error.dataAccess?.plannedAppPersistenceTables || [],
+          config: error.dataAccess?.config,
           verified: false,
           message: error.message || "Lakehouse facilities unavailable; using local fallback."
         });
@@ -1284,13 +1292,16 @@ async function readChatStream(response, onDelta) {
 function DataSourceStrip({ dataAccess, facilityCount }) {
   const sourceMode = dataAccess?.mode || "demo";
   const isLakehouse = sourceMode === "lakehouse";
+  const lakehouseUnavailable = isLakehouse && dataAccess?.verified === false;
   const label = dataAccess?.label || (isLakehouse ? "Lakehouse Delta tables" : "Local demo facility list");
-  const detail = isLakehouse
+  const detail = lakehouseUnavailable
+    ? `${facilityCount} fallback records`
+    : isLakehouse
     ? `${dataAccess?.facilityCount ?? facilityCount} live records`
     : `${facilityCount} local records`;
 
   return (
-    <div className={`dataSourceStrip ${isLakehouse ? "lakehouse" : "demo"}`}>
+    <div className={`dataSourceStrip ${isLakehouse && !lakehouseUnavailable ? "lakehouse" : "demo"}`}>
       <Database size={15} />
       <span>{label}</span>
       <strong>{detail}</strong>

@@ -18,14 +18,21 @@ const openaiReasoningEffort = process.env.OPENAI_REASONING_EFFORT || "medium";
 const openaiStreamTimeoutMs = Number(process.env.OPENAI_STREAM_TIMEOUT_MS || 45000);
 const googleMapsApiKey = process.env.GOOGLE_MAPS_API_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY || "";
 const googleMapsMapId = process.env.GOOGLE_MAPS_MAP_ID || process.env.VITE_GOOGLE_MAP_ID || "DEMO_MAP_ID";
-const dataMode = process.env.SHIFTLINK_DATA_MODE === "lakehouse" ? "lakehouse" : "demo";
 const databricksHost = normalizeDatabricksHost(
-  process.env.DATABRICKS_HOST || process.env.DATABRICKS_SERVER_HOSTNAME || ""
+  process.env.DATABRICKS_HOST || process.env.DATABRICKS_SERVER_HOSTNAME || process.env.DATABRICKS_WORKSPACE_URL || ""
 );
 const databricksWarehouseId = process.env.DATABRICKS_SQL_WAREHOUSE_ID || process.env.DATABRICKS_WAREHOUSE_ID || "";
 const lakehouseFacilitiesTable = normalizeTableName(
   process.env.SHIFTLINK_FACILITIES_TABLE || "workspace.virtue_foundation_enriched.gold_facilities"
 );
+const hasLakehouseRuntimeConfig = Boolean(databricksHost && databricksWarehouseId && lakehouseFacilitiesTable);
+const configuredDataMode = String(process.env.SHIFTLINK_DATA_MODE || "").trim().toLowerCase();
+const dataMode =
+  configuredDataMode === "demo"
+    ? "demo"
+    : configuredDataMode === "lakehouse" || hasLakehouseRuntimeConfig
+      ? "lakehouse"
+      : "demo";
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 15 * 1024 * 1024 }
@@ -160,7 +167,7 @@ function safeArray(value) {
 
 function getDataAccess(facilities = [], overrides = {}) {
   const facilityCount = safeArray(facilities).length;
-  const configuredForLakehouse = Boolean(databricksHost && databricksWarehouseId && lakehouseFacilitiesTable);
+  const configuredForLakehouse = hasLakehouseRuntimeConfig;
   const mode = overrides.mode || dataMode;
   const isLakehouse = mode === "lakehouse";
   return {
@@ -169,6 +176,11 @@ function getDataAccess(facilities = [], overrides = {}) {
     activeTables: overrides.activeTables || (isLakehouse ? [lakehouseFacilitiesTable] : []),
     expectedLakehouseTables: lakehouseTables,
     plannedAppPersistenceTables: appPersistenceTables,
+    config: {
+      databricksHostConfigured: Boolean(databricksHost),
+      sqlWarehouseConfigured: Boolean(databricksWarehouseId),
+      facilitiesTable: lakehouseFacilitiesTable
+    },
     facilityCount: overrides.facilityCount ?? facilityCount,
     verified: overrides.verified ?? (isLakehouse && configuredForLakehouse),
     message:
@@ -727,7 +739,8 @@ app.get("/api/health", (req, res) => {
     dataMode,
     model: openaiModel,
     reasoningEffort: openaiReasoningEffort,
-    streamTimeoutMs: openaiStreamTimeoutMs
+    streamTimeoutMs: openaiStreamTimeoutMs,
+    lakehouseConfigured: hasLakehouseRuntimeConfig
   });
 });
 
@@ -741,7 +754,8 @@ app.get("/api/config", (req, res) => {
     dataMode,
     model: openaiModel,
     reasoningEffort: openaiReasoningEffort,
-    streamTimeoutMs: openaiStreamTimeoutMs
+    streamTimeoutMs: openaiStreamTimeoutMs,
+    lakehouseConfigured: hasLakehouseRuntimeConfig
   });
 });
 
