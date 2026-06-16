@@ -497,6 +497,7 @@ function DoctorApp({ user, requests, onCreateScheduleRequest, onUpdateRequestSta
     }
   ]));
   const [outreachRequests, setOutreachRequests] = useState(() => readJson(outreachKey, []));
+  const draftingFacilitiesRef = useRef(new Set());
 
   const selectedFacility = facilities.find((facility) => facility.id === selectedFacilityId) || facilities[0];
   const doctorRequests = requests.filter((request) => request.doctorId === user.id);
@@ -504,9 +505,15 @@ function DoctorApp({ user, requests, onCreateScheduleRequest, onUpdateRequestSta
     (request) => getRequestDirection(request) === "hospital_to_doctor"
   );
 
-  function persistOutreachRequests(nextRequests) {
-    saveJson(outreachKey, nextRequests);
-    setOutreachRequests(nextRequests);
+  // Accepts either the next array or an updater (current => next). All callers go
+  // through the functional form so concurrent async writes/edits always merge
+  // against the freshest list instead of a stale render snapshot.
+  function persistOutreachRequests(next) {
+    setOutreachRequests((current) => {
+      const nextRequests = typeof next === "function" ? next(current) : next;
+      saveJson(outreachKey, nextRequests);
+      return nextRequests;
+    });
   }
 
   function updateSchedule(updater) {
@@ -553,36 +560,103 @@ function DoctorApp({ user, requests, onCreateScheduleRequest, onUpdateRequestSta
     return request || nextEntry;
   }
 
-  function createOutreachDraft(facilityId) {
+  async function createOutreachDraft(facilityId) {
     const facility = facilities.find((item) => item.id === facilityId);
     if (!facility) return;
 
-    const existing = outreachRequests.find(
-      (request) => request.facilityId === facilityId && !["closed", "appointment_confirmed"].includes(request.status)
-    );
-    if (existing) {
+    // Synchronous in-flight guard: blocks rapid double-clicks before React re-renders.
+    if (draftingFacilitiesRef.current.has(facilityId)) {
       setActiveView("outreach");
       return;
     }
 
-    persistOutreachRequests([
-      {
-        id: crypto.randomUUID(),
-        facilityId,
-        channel: facility.email ? "Email" : "Phone script",
-        destination: facility.email || facility.phone,
-        status: "draft",
-        approvalStatus: "doctor_approval_required",
-        message: buildOutreachMessage(facility, profile),
-        proposedTimes: [
-          { date: "2026-06-18", time: "11:00", label: "Thu, Jun 18 at 11:00" },
-          { date: "2026-06-19", time: "14:30", label: "Fri, Jun 19 at 14:30" }
-        ],
-        createdAt: new Date().toISOString()
-      },
-      ...outreachRequests
-    ]);
+    const draftId = crypto.randomUUID();
+    const proposedTimes = [
+      { date: "2026-06-18", time: "11:00", label: "Thu, Jun 18 at 11:00" },
+      { date: "2026-06-19", time: "14:30", label: "Fri, Jun 19 at 14:30" }
+    ];
+
+    // Atomically check for an existing open draft and (if none) insert the
+    // placeholder, both against the freshest list — no stale-snapshot races.
+    let inserted = false;
+    persistOutreachRequests((current) => {
+      const existing = current.find(
+        (request) =>
+          request.facilityId === facilityId && !["closed", "appointment_confirmed"].includes(request.status)
+      );
+      if (existing) return current;
+      inserted = true;
+      return [
+        { id: draftId, facilityId, status: "drafting", createdAt: new Date().toISOString(), proposedTimes },
+        ...current
+      ];
+    });
     setActiveView("outreach");
+    if (!inserted) return;
+
+    draftingFacilitiesRef.current.add(facilityId);
+    const doctor = buildDoctorForApi(user, profile);
+
+    const applyDraft = (draft) => {
+      persistOutreachRequests((current) =>
+        current.map((request) =>
+          request.id === draftId
+            ? {
+                ...request,
+                facilityId,
+                proposedTimes,
+                status: "draft",
+                approvalStatus: "doctor_approval_required",
+                recommendedChannel: draft.recommendedChannel,
+                selectedChannel: draft.recommendedChannel,
+                availableChannels: draft.availableChannels,
+                channelValues: draft.channelValues,
+                subject: draft.subject,
+                body: draft.body,
+                phoneScript: draft.phoneScript,
+                message: draft.body,
+                source: draft.source,
+                channel: prettyChannelLabel(draft.recommendedChannel),
+                destination: draft.channelValues[draft.recommendedChannel] || ""
+              }
+            : request
+        )
+      );
+    };
+
+    try {
+      const response = await fetch("/api/outreach", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          facility: mapFacilityForApi(facility),
+          doctor,
+          district_need: facility.match || null,
+          preferred_channel: null
+        })
+      });
+      if (!response.ok) throw new Error("Outreach drafting failed");
+      const data = await response.json();
+      applyDraft({
+        recommendedChannel: data.recommended_channel,
+        availableChannels: data.available_channels,
+        channelValues: data.channel_values,
+        subject: data.subject,
+        body: data.body,
+        phoneScript: data.phone_sms_script,
+        source: data.source
+      });
+    } catch {
+      applyDraft(localOutreachDraft(facility, doctor));
+    } finally {
+      draftingFacilitiesRef.current.delete(facilityId);
+    }
+  }
+
+  function updateOutreachDraft(id, fields) {
+    persistOutreachRequests((current) =>
+      current.map((request) => (request.id === id ? { ...request, ...fields } : request))
+    );
   }
 
   function approveOutreach(id) {
@@ -710,6 +784,7 @@ function DoctorApp({ user, requests, onCreateScheduleRequest, onUpdateRequestSta
           onDenyHospitalRequest={denyHospitalRequest}
           outreachRequests={outreachRequests}
           createOutreachDraft={createOutreachDraft}
+          updateOutreachDraft={updateOutreachDraft}
           approveOutreach={approveOutreach}
           approveClinicTime={approveClinicTime}
         />
@@ -1521,6 +1596,7 @@ function OutreachPanel({
   setSelectedFacilityId,
   outreachRequests,
   createOutreachDraft,
+  updateOutreachDraft,
   approveOutreach,
   approveClinicTime
 }) {
@@ -1562,6 +1638,36 @@ function OutreachPanel({
         {outreachRequests.length ? (
           outreachRequests.map((request) => {
             const facility = facilities.find((item) => item.id === request.facilityId);
+
+            if (request.status === "drafting") {
+              return (
+                <article className="approvalCard" key={request.id}>
+                  <div className="approvalTopline">
+                    <div>
+                      <span className="statusLabel status-drafting">Drafting</span>
+                      <h3>{facility?.name || "Selected facility"}</h3>
+                    </div>
+                    <Sparkles size={18} />
+                  </div>
+                  <div className="draftingState">
+                    <span className="draftingSpinner" aria-hidden="true" />
+                    <span>Drafting with AI…</span>
+                  </div>
+                </article>
+              );
+            }
+
+            const availableChannels = request.availableChannels || [];
+            const channelValues = request.channelValues || {};
+            const selectedChannel = request.selectedChannel || request.recommendedChannel || "none";
+            const hasChannel = selectedChannel !== "none" && availableChannels.length > 0;
+            const draftBody = request.body || request.message || "";
+            const links = buildSendLinks({
+              channelValues,
+              subject: request.subject,
+              body: draftBody
+            });
+
             return (
               <article className="approvalCard" key={request.id}>
                 <div className="approvalTopline">
@@ -1569,16 +1675,115 @@ function OutreachPanel({
                     <span className={`statusLabel status-${request.status}`}>{formatStatus(request.status)}</span>
                     <h3>{facility?.name || "Selected facility"}</h3>
                     <p>
-                      {request.channel} · {request.destination || "Contact enrichment needed"}
+                      <span className={`sourceBadge ${request.source === "ai" ? "ai" : "template"}`}>
+                        {request.source === "ai" ? "AI-drafted" : "Template"}
+                      </span>
+                      {" · "}
+                      {prettyChannelLabel(request.recommendedChannel)}
                     </p>
                   </div>
                   <ShieldCheck size={18} />
                 </div>
-                <div className="draftMessage">{request.message}</div>
+
+                {availableChannels.length > 0 && (
+                  <div className="channelSelector">
+                    {availableChannels.map((channel) => (
+                      <button
+                        key={`${request.id}-${channel}`}
+                        type="button"
+                        className={selectedChannel === channel ? "active" : ""}
+                        onClick={() =>
+                          updateOutreachDraft(request.id, {
+                            selectedChannel: channel,
+                            destination: request.channelValues?.[channel] || ""
+                          })
+                        }
+                      >
+                        {prettyChannelLabel(channel)}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {selectedChannel === "email" && (
+                  <label className="draftField">
+                    Subject
+                    <input
+                      type="text"
+                      value={request.subject || ""}
+                      onChange={(event) => updateOutreachDraft(request.id, { subject: event.target.value })}
+                    />
+                  </label>
+                )}
+
+                <label className="draftField">
+                  Message
+                  <textarea
+                    className="draftTextarea"
+                    rows={8}
+                    value={draftBody}
+                    onChange={(event) =>
+                      updateOutreachDraft(request.id, { body: event.target.value, message: event.target.value })
+                    }
+                  />
+                </label>
+
+                <div className="sendRow">
+                  {selectedChannel === "email" && links.email && (
+                    <a className="primaryButton" href={links.email}>
+                      <Mail size={16} />
+                      Open email draft
+                    </a>
+                  )}
+                  {selectedChannel === "phone" && links.phone && (
+                    <a className="primaryButton" href={links.phone}>
+                      <Phone size={16} />
+                      Call
+                    </a>
+                  )}
+                  {selectedChannel === "whatsapp" && links.whatsapp && (
+                    <a className="primaryButton" href={links.whatsapp} target="_blank" rel="noreferrer">
+                      <MessageSquareText size={16} />
+                      Open WhatsApp
+                    </a>
+                  )}
+                  {(selectedChannel === "website" || selectedChannel === "facebook") && links[selectedChannel] && (
+                    <a
+                      className="primaryButton"
+                      href={links[selectedChannel]}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      <ExternalLink size={16} />
+                      Open page
+                    </a>
+                  )}
+                  <button type="button" className="ghostButton" onClick={() => copyText(draftBody)}>
+                    <Copy size={16} />
+                    Copy message
+                  </button>
+                </div>
+
+                {selectedChannel === "phone" && request.phoneScript && (
+                  <div className="phoneScriptBox">
+                    <div className="draftMessage">{request.phoneScript}</div>
+                    <button type="button" className="ghostButton" onClick={() => copyText(request.phoneScript)}>
+                      <Copy size={16} />
+                      Copy script
+                    </button>
+                  </div>
+                )}
+
                 {request.status === "draft" && (
-                  <button className="primaryButton" type="button" onClick={() => approveOutreach(request.id)}>
+                  <button
+                    className="primaryButton"
+                    type="button"
+                    onClick={() => approveOutreach(request.id)}
+                    disabled={!hasChannel}
+                    title={hasChannel ? undefined : "No contact channel found for this facility — copy the message and reach out manually."}
+                  >
                     <Check size={17} />
-                    Approve and mark sent
+                    {hasChannel ? "Approve and mark sent" : "No contact channel"}
                   </button>
                 )}
                 {request.status === "reply_received" && (
@@ -2132,14 +2337,158 @@ function extractLocalTags(rawText) {
   };
 }
 
-function buildOutreachMessage(facility, profile) {
-  const specialty = profile.tags.specialties[0] || "medical";
-  const region = profile.tags.regions[0] || facility.state;
-  const contactLine = facility.email
-    ? `I found a public email for ${facility.name}: ${facility.email}.`
-    : `I found a public phone number for ${facility.name}: ${facility.phone}.`;
+function mapFacilityForApi(facility) {
+  return {
+    id: facility.id,
+    name: facility.name,
+    type: facility.type,
+    city: facility.city,
+    state: facility.state,
+    email: facility.email || null,
+    phone: facility.phone || null,
+    website: facility.website || null,
+    facebook: facility.facebookUrl || null,
+    capabilities: [],
+    match: facility.match || ""
+  };
+}
 
-  return `Hello ${facility.name}, I am a ${specialty} doctor planning referral and volunteer outreach near ${region}. I would like to schedule a short introductory meeting to learn whether my background may be useful to your clinic. ${contactLine}`;
+function buildDoctorForApi(user, profile) {
+  return {
+    name: getDisplayName(user),
+    specialties: profile?.tags?.specialties || [],
+    regions: profile?.tags?.regions || [],
+    experienceYears: profile?.tags?.experience || null
+  };
+}
+
+function copyText(text) {
+  try {
+    navigator.clipboard?.writeText(text || "");
+  } catch {
+    // Clipboard may be unavailable (insecure context / permissions); ignore.
+  }
+}
+
+const CHANNEL_LABELS = {
+  email: "Email",
+  phone: "Phone / SMS",
+  whatsapp: "WhatsApp",
+  website: "Website",
+  facebook: "Facebook",
+  none: "No contact channel"
+};
+
+function prettyChannelLabel(channel) {
+  return CHANNEL_LABELS[channel] || "Contact";
+}
+
+// mailto recipients must not carry header-injection characters (a facility email
+// like "x@y.com?bcc=evil" would otherwise smuggle a bcc header into the draft).
+// Keep only the leading address-looking token, dropping anything from the first
+// disallowed char onward.
+function sanitizeEmailRecipient(raw) {
+  const s = String(raw || "").trim();
+  const cut = s.search(/[\s?&,;<>"'()]/);
+  const addr = cut === -1 ? s : s.slice(0, cut);
+  return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(addr) ? addr : "";
+}
+
+// tel: links should be digits and an optional leading "+" only.
+function sanitizeTel(raw) {
+  const s = String(raw || "").trim();
+  const plus = s.startsWith("+") ? "+" : "";
+  const digits = s.replace(/[^\d]/g, "");
+  return digits ? plus + digits : "";
+}
+
+function buildSendLinks(draft) {
+  const values = draft.channelValues || {};
+  const subject = draft.subject || "";
+  const body = draft.body || "";
+  const links = {};
+  if (values.email) {
+    const to = sanitizeEmailRecipient(values.email);
+    if (to) {
+      links.email = `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    }
+  }
+  if (values.phone) {
+    const tel = sanitizeTel(values.phone);
+    if (tel) links.phone = `tel:${tel}`;
+  }
+  if (values.whatsapp) {
+    links.whatsapp = `${values.whatsapp}?text=${encodeURIComponent(body)}`;
+  }
+  if (values.website) {
+    links.website = values.website;
+  }
+  if (values.facebook) {
+    links.facebook = values.facebook;
+  }
+  return links;
+}
+
+function humanizeSpecialtyLabel(token) {
+  return String(token)
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/\bAnd\b/g, "and")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function ensureUrlClient(url) {
+  if (!url) return null;
+  const trimmed = String(url).trim();
+  if (!trimmed) return null;
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+}
+
+// Local fallback that mirrors the server's deterministic channel + template logic
+// so the UI still works if /api/outreach is unreachable.
+function localOutreachDraft(facility, doctor) {
+  const email = (facility.email || "").trim() || null;
+  const phone = (facility.phone || "").trim() || null;
+  const website = ensureUrlClient(facility.website);
+  const facebook = ensureUrlClient(facility.facebookUrl);
+
+  const phoneRaw = phone ? phone.replace(/[^\d]/g, "") : "";
+  const local = phoneRaw.startsWith("91") && phoneRaw.length === 12 ? phoneRaw.slice(2) : phoneRaw;
+  const isMobile = local.length === 10 && /^[6-9]/.test(local);
+  const whatsapp = isMobile ? `https://wa.me/${phoneRaw}` : null;
+
+  const channelValues = { email, phone, website, facebook, whatsapp };
+  const order = ["email", "phone", "whatsapp", "website", "facebook"];
+  const availableChannels = order.filter((channel) => channelValues[channel]);
+  const recommendedChannel = availableChannels[0] || "none";
+
+  const specialty = humanizeSpecialtyLabel(doctor?.specialties?.[0] || "medical");
+  const name = (doctor?.name || "").trim() || "Dr.";
+  const facName = (facility.name || "").trim() || "your facility";
+  const place = (facility.city || "").trim() || (facility.state || "").trim() || "your area";
+  const need = (facility.match || "").trim();
+  const needLine = need ? ` I am especially interested in supporting local needs such as ${need}.` : "";
+
+  const body = `Dear team at ${facName},
+
+My name is ${name} and I am a ${specialty} doctor interested in supporting clinics and hospitals near ${place} through referrals and volunteer work.${needLine} I would welcome a short introductory conversation to explore whether my background could be useful to your patients.
+
+Thank you for your time, and I look forward to hearing from you.
+
+Warm regards,
+${name}`;
+  const phoneScript = `Hello, this is ${name}, a ${specialty} doctor. I'd love a brief chat about supporting ${facName} with referrals or volunteer visits. Is there a good time to talk?`;
+
+  return {
+    recommendedChannel,
+    availableChannels,
+    channelValues,
+    subject: recommendedChannel === "email" ? `Introduction from ${name}, ${specialty} doctor` : null,
+    body,
+    phoneScript,
+    source: "template"
+  };
 }
 
 function getApprovalCount(outreachRequests, incomingHospitalRequests = []) {
@@ -2202,13 +2551,25 @@ function makeGoogleMarkerContent(tier, selected) {
   return marker;
 }
 
+// Google Maps' InfoWindow.setContent takes an HTML string, so any facility field
+// interpolated here must be HTML-escaped — otherwise a stray "<" in source data
+// would inject markup into the map popup.
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function renderMapInfo(facility) {
   const tierLabel = tierMeta[facility.tier].label;
   return `
     <div class="gmInfo">
-      <strong>${facility.name}</strong>
-      <span>${facility.city}, ${facility.state} · ${facility.distanceKm} km</span>
-      <em>${tierLabel} evidence</em>
+      <strong>${escapeHtml(facility.name)}</strong>
+      <span>${escapeHtml(facility.city)}, ${escapeHtml(facility.state)} · ${escapeHtml(facility.distanceKm)} km</span>
+      <em>${escapeHtml(tierLabel)} evidence</em>
     </div>
   `;
 }
