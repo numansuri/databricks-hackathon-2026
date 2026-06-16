@@ -180,7 +180,7 @@ function doctorSpecialtyLabel(doctor) {
   return s.length ? humanizeSpecialty(s[0]) : "medical";
 }
 
-const SYSTEM_PROMPT = `You write a short, warm, professional outreach message from a volunteering or referring specialist doctor to a healthcare facility. The goal is to request a brief introductory conversation about collaboration, referrals, or volunteer support.
+const SYSTEM_PROMPT = `You write a short, warm, professional outreach message from a volunteering specialist doctor to a healthcare facility. The goal is to request a brief introductory conversation about volunteer clinical support and collaboration.
 
 Always return BOTH of these, regardless of channel:
 - "body": the FULL outreach message, always non-empty (about 60-120 words). This is the primary message; for an email it is the email body, and for any other channel it is the message the doctor adapts. NEVER leave "body" empty.
@@ -254,13 +254,13 @@ export function templateDraft({ facility, doctor, district_need, channel }) {
     : "";
   const body = `Dear team at ${facName},
 
-My name is ${name} and I am a ${specialty} doctor interested in supporting clinics and hospitals near ${place} through referrals and volunteer work.${needLine} I would welcome a short introductory conversation to explore whether my background could be useful to your patients.
+My name is ${name} and I am a ${specialty} doctor interested in volunteering my time to support clinics and hospitals near ${place}.${needLine} I would welcome a short introductory conversation to explore whether my background could be useful to your patients.
 
 Thank you for your time, and I look forward to hearing from you.
 
 Warm regards,
 ${name}`;
-  const phone_sms_script = `Hello, this is ${name}, a ${specialty} doctor. I'd love a brief chat about supporting ${facName} with referrals or volunteer visits. Is there a good time to talk?`;
+  const phone_sms_script = `Hello, this is ${name}, a ${specialty} doctor. I'd love a brief chat about volunteering to support ${facName} with clinical visits. Is there a good time to talk?`;
   return {
     subject: channel === "email" ? `Introduction from ${name}, ${specialty} doctor` : null,
     body,

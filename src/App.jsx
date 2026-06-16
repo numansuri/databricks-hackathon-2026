@@ -2477,13 +2477,13 @@ function localOutreachDraft(facility, doctor) {
 
   const body = `Dear team at ${facName},
 
-My name is ${name} and I am a ${specialty} doctor interested in supporting clinics and hospitals near ${place} through referrals and volunteer work.${needLine} I would welcome a short introductory conversation to explore whether my background could be useful to your patients.
+My name is ${name} and I am a ${specialty} doctor interested in volunteering my time to support clinics and hospitals near ${place}.${needLine} I would welcome a short introductory conversation to explore whether my background could be useful to your patients.
 
 Thank you for your time, and I look forward to hearing from you.
 
 Warm regards,
 ${name}`;
-  const phoneScript = `Hello, this is ${name}, a ${specialty} doctor. I'd love a brief chat about supporting ${facName} with referrals or volunteer visits. Is there a good time to talk?`;
+  const phoneScript = `Hello, this is ${name}, a ${specialty} doctor. I'd love a brief chat about volunteering to support ${facName} with clinical visits. Is there a good time to talk?`;
 
   return {
     recommendedChannel,
