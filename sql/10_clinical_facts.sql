@@ -12,7 +12,7 @@
 --
 -- Source: workspace.virtue_foundation_enriched.facilities_silver WHERE is_canonical
 -- Principle: "surface uncertainty, never fabricate" -- flags are scraped free-text
--- signals (clinical_signal_source = 'capability_procedure_text'), not authoritative.
+-- signals (clinical_signal_source = 'capability_procedure_description_text'), not authoritative.
 -- ============================================================================
 
 -- ----------------------------------------------------------------------------
@@ -62,7 +62,7 @@ SELECT
          )
     ELSE NULL
   END                                                                     AS ot_count_text,
-  CAST('capability_procedure_text' AS STRING)                            AS clinical_signal_source
+  CAST('capability_procedure_description_text' AS STRING)                AS clinical_signal_source
 FROM base;
 
 -- ----------------------------------------------------------------------------

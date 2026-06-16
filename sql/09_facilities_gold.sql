@@ -77,7 +77,7 @@ SELECT
   de.description_length, de.description_word_count, de.has_rich_description,
   de.ownership_sector, de.ownership_sector_source, de.desc_founding_year,
   de.desc_has_opening_hours, de.desc_opening_hours_raw, de.desc_accreditation_signal,
-  de.desc_mentions_24x7, de.desc_bed_count,
+  de.desc_mentions_24x7,
   -- WS-9 derived: emergency readiness
   round((cast(coalesce(cap.has_emergency,false) as int) + cast(coalesce(cap.has_icu,false) as int)
        + cast(coalesce(cap.has_blood_bank,false) as int) + cast(coalesce(cap.has_ventilator,false) as int)
@@ -95,7 +95,7 @@ SELECT
   -- cross-workstream flags (guarded with coalesce)
   (coalesce(f.freshness_tier,'unknown')='stale' OR coalesce(c.contact_verification_status,'unverified')='unverified')
     AS needs_outreach,
-  (coalesce(so.digital_presence_score,0) >= 0.5 AND f.social_post_date >= date_sub(DATE'2025-12-21',365))
+  (coalesce(so.digital_presence_score,0) >= 0.5 AND coalesce(f.social_post_date >= date_sub(DATE'2025-12-21',365), false))
     AS is_digitally_active,
   (coalesce(b.bed_count_confidence,'low') <> 'high'
      OR coalesce(c.contact_verification_status,'unverified')='unverified'
@@ -112,7 +112,23 @@ SELECT
   END AS year_established_source,
   -- WS-2 fix: best operating-hours text (real WS-2 operating-hours answer)
   coalesce(av.opd_hours_raw, de.desc_opening_hours_raw) AS opd_hours_final,
-  (coalesce(av.opd_hours_raw, de.desc_opening_hours_raw) IS NOT NULL) AS has_operating_hours
+  (coalesce(av.opd_hours_raw, de.desc_opening_hours_raw) IS NOT NULL
+     OR coalesce(de.desc_has_opening_hours, false)
+     OR coalesce(av.hours_signal_present, false)) AS has_operating_hours,
+  -- WS-7+14 fix: governed ownership sector reconciling operator_type (93% filled, structured)
+  --   with description/name text evidence (which adds the trust/charitable nuance operator_type lacks).
+  CASE
+    WHEN s.operator_type IN ('public','government') OR de.ownership_sector = 'government' THEN 'government_public'
+    WHEN de.ownership_sector = 'trust_charitable' THEN 'trust_charitable'
+    WHEN s.operator_type = 'private' OR de.ownership_sector = 'private' THEN 'private'
+    ELSE NULL
+  END AS ownership_sector_final,
+  CASE
+    WHEN s.operator_type IN ('public','government','private') AND de.ownership_sector IS NOT NULL THEN 'operator_type+description'
+    WHEN s.operator_type IN ('public','government','private') THEN 'operator_type'
+    WHEN de.ownership_sector IS NOT NULL THEN 'description_text'
+    ELSE NULL
+  END AS ownership_sector_final_source
 FROM (SELECT * FROM workspace.virtue_foundation_enriched.facilities_silver WHERE is_canonical) s
 LEFT JOIN workspace.virtue_foundation_enriched.facilities_enrich_beds          b   USING (facility_sk)
 LEFT JOIN workspace.virtue_foundation_enriched.facilities_enrich_availability  av  USING (facility_sk)

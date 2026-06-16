@@ -35,7 +35,7 @@ flags AS (
   SELECT
     facility_sk,
     -- named doctor mining (case-sensitive)
-    size(array_distinct(regexp_extract_all(blob_cs, '(Dr\\.?\\s+[A-Z][a-zA-Z.]+(?:\\s+[A-Z][a-zA-Z.]+){0,2})', 1))) AS named_doctor_count,
+    size(array_distinct(regexp_extract_all(blob_cs, '(Dr\\.?\\s+[A-Z][a-zA-Z.]+(?:\\s+[A-Z][a-zA-Z.]+){0,2})(?!\\x27?s?\\s+(?:Hospital|Hospitals|College|University|Institute|Clinic|Medical|Dental|Memorial|Multispeciality|Multispecialty|Speciality|Specialty|Healthcare|Health|Diagnostic|Diagnostics|Laboratory|Laboratories|Foundation|Trust|Centre|Center|Nursing|Polyclinic|Eye|Heart|Cancer|Children|Ortho|Neuro|Skin|Care|Group))', 1))) AS named_doctor_count,
     -- department leadership language
     (blob RLIKE 'led by|headed by|head of department|\\bhod\\b') AS has_department_lead,
     -- per-domain specialist TITLE presence (direct evidence of a doctor for that domain)
@@ -56,6 +56,8 @@ flags AS (
     (blob RLIKE 'pathologist') AS has_pathologist,
     (blob RLIKE 'anaesthesiologist|anesthesiologist|anaesthetist') AS has_anesthesiologist,
     (blob RLIKE 'general surgeon') AS has_general_surgeon,
+    -- NOTE: has_physician ('physician') is too generic to be specialist evidence;
+    --       it is kept as a column but EXCLUDED from specialist_domain_count / has_specialist_evidence.
     (blob RLIKE 'general physician|\\bphysician\\b') AS has_physician
   FROM prepped
 )
@@ -87,7 +89,7 @@ SELECT
    + cast(has_orthopedic_surgeon AS int) + cast(has_urologist AS int) + cast(has_dermatologist AS int)
    + cast(has_ophthalmologist AS int) + cast(has_psychiatrist AS int) + cast(has_pulmonologist AS int)
    + cast(has_gastroenterologist AS int) + cast(has_radiologist AS int) + cast(has_pathologist AS int)
-   + cast(has_anesthesiologist AS int) + cast(has_general_surgeon AS int) + cast(has_physician AS int)
+   + cast(has_anesthesiologist AS int) + cast(has_general_surgeon AS int)
   ) AS specialist_domain_count,
   (
     (cast(has_cardiologist AS int) + cast(has_oncologist AS int) + cast(has_neurologist AS int)
@@ -95,7 +97,7 @@ SELECT
      + cast(has_orthopedic_surgeon AS int) + cast(has_urologist AS int) + cast(has_dermatologist AS int)
      + cast(has_ophthalmologist AS int) + cast(has_psychiatrist AS int) + cast(has_pulmonologist AS int)
      + cast(has_gastroenterologist AS int) + cast(has_radiologist AS int) + cast(has_pathologist AS int)
-     + cast(has_anesthesiologist AS int) + cast(has_general_surgeon AS int) + cast(has_physician AS int)
+     + cast(has_anesthesiologist AS int) + cast(has_general_surgeon AS int)
     ) > 0
   ) AS has_specialist_evidence,
   'capability_procedure_description_text' AS staff_evidence_source
@@ -121,6 +123,6 @@ SELECT
   doctor_name
 FROM base
 LATERAL VIEW explode(
-  array_distinct(regexp_extract_all(blob_cs, '(Dr\\.?\\s+[A-Z][a-zA-Z.]+(?:\\s+[A-Z][a-zA-Z.]+){0,2})', 1))
+  array_distinct(regexp_extract_all(blob_cs, '(Dr\\.?\\s+[A-Z][a-zA-Z.]+(?:\\s+[A-Z][a-zA-Z.]+){0,2})(?!\\x27?s?\\s+(?:Hospital|Hospitals|College|University|Institute|Clinic|Medical|Dental|Memorial|Multispeciality|Multispecialty|Speciality|Specialty|Healthcare|Health|Diagnostic|Diagnostics|Laboratory|Laboratories|Foundation|Trust|Centre|Center|Nursing|Polyclinic|Eye|Heart|Cancer|Children|Ortho|Neuro|Skin|Care|Group))', 1))
 ) t AS doctor_name
 WHERE doctor_name IS NOT NULL AND doctor_name <> '';

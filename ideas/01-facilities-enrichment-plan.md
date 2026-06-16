@@ -1,7 +1,7 @@
 # Facilities Enrichment Plan v2 — Virtue Foundation (DAIS 2026)
 
 **Date:** 2026-06-15 · **Status:** `built` (deterministic core; LLM/scrape follow-ups pending) · codex-reviewed
-**Build:** all tables live in `workspace.virtue_foundation_enriched`; `facilities_gold` = 9,989 facilities × 176 cols (grew 86 → 147 → 176; see Coverage audit). See [`../sql/README.md`](../sql/README.md).
+**Build:** all tables live in `workspace.virtue_foundation_enriched`; `facilities_gold` = 9,989 facilities × 177 cols (grew 86 → 147 → 176 → 177; see Coverage audit). See [`../sql/README.md`](../sql/README.md).
 **Source table:** `databricks_virtue_foundation_dataset_dais_2026.virtue_foundation_dataset.facilities`
 **Output location:** `workspace.virtue_foundation_enriched.*` (see note below)
 **Companion:** [`../findings/dataset-deep-dive.md`](../findings/dataset-deep-dive.md)
@@ -286,11 +286,11 @@ A second pass added two more enrichment tables, one more bridge, four correctnes
   `has_pathologist`, `has_anesthesiologist`, `has_general_surgeon`, `has_physician`), `specialist_domain_count`,
   `has_specialist_evidence`, and a `staff_evidence_source` provenance companion. Signals are INFERRED from
   scraped free-text (`capability` + `procedure` + `description`); unknowns stay NULL.
-- `facilities_doctors` (bridge, **13,456** rows, one per facility × distinct mined doctor name).
+- `facilities_doctors` (bridge, **13,469** rows, one per facility × distinct mined doctor name; institution names excluded).
 - `facilities_enrich_description` (`14_description.sql`) — mines the 100%-filled `description`:
   `description_length` / `description_word_count` / `has_rich_description`, `ownership_sector` (+`_source`,
   NULL when unknown — never guessed), `desc_founding_year` (clamped 1800–2026), `desc_has_opening_hours` /
-  `desc_opening_hours_raw`, `desc_accreditation_signal`, `desc_mentions_24x7`, `desc_bed_count` (clamped 1–4000).
+  `desc_opening_hours_raw`, `desc_accreditation_signal`, `desc_mentions_24x7`.
 
 **Bug fixes (4) + dedup (1):**
 1. `04_freshness.sql` — **future-date clamp**: any `page_update_date` / `social_post_date` parsed *after* the
@@ -308,9 +308,20 @@ A second pass added two more enrichment tables, one more bridge, four correctnes
    `has_telemedicine`, `has_ambulance`) plus two mined counts that **exactly duplicated**
    `facilities_enrich_clinical_facts`, restoring a single source of truth for free-text clinical signals.
 
-**Final gold column count:** `facilities_gold` is now **176 columns** (147 → 176; +29 from the staff and
-description blocks plus refreshed cross-WS derived fields). The data dictionary was re-materialized
-(`15_data_dictionary.sql`): **176 dictionary rows = 176 gold columns, 0 NULL/empty descriptions**.
+**Final gold column count:** `facilities_gold` is now **177 columns** (147 → 176 → 177; +29 from the staff and
+description blocks, then a Codex-review fix pass that dropped `desc_bed_count` and added the governed
+`ownership_sector_final` (+`_source`)). The data dictionary was re-materialized
+(`15_data_dictionary.sql`): **177 dictionary rows = 177 gold columns, 0 NULL/empty descriptions**.
+
+**Codex review fix pass (2026-06-15):** added `is_contactable_direct`; clamped future-dated freshness (6→0);
+tightened `is_teaching_hospital` precision; removed 11 duplicate clinical flags (canonical = `clinical_facts`);
+fixed `is_digitally_active` (FALSE not NULL), `has_operating_hours` (also fires on description/availability
+hours signals), and `clinical_signal_source` provenance; reconciled ownership into `ownership_sector_final`
+(operator_type + description, **93% classified**); tightened `ownership_sector` / `desc_founding_year` and
+dropped `desc_bed_count`; excluded institution names from the named-doctor regex and `has_physician` from the
+specialist count; added `16_validate_grain.sql` (1:1 grain asserts — all 14 pass). Deferred (in README):
+emergency-readiness weighting, 24x7 scope parsing, day-month social dates, doctor-bridge titles, and the
+`is_contactable` / `contact_verification_status` renames (held to avoid breaking the frontend prototype).
 
 **Coverage, two ways (refreshed):**
 - **Raw-column coverage = encoded / 51 = 41 / 51 = 80.4%.** The staff/description pass mines columns that were
