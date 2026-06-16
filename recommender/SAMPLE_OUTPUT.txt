@@ -1,0 +1,187 @@
+
+=== Recommendations for Dr. Asha Verma — pediatrician, mission-driven, will go anywhere (max-impact baseline) (pediatrics) ===
+  preferences: locations=open mode=open setting=any
+
+  #1  Araria, Bihar   impact 100/100  [critical]  (NO specialist here today)
+      needs: anaemia, child_illness_care, child_malnutrition, child_immunization, infant_young_child_feeding
+      basis: demand vs supply
+      -> host: greenfield (no suitable host facility in dataset)
+
+  #2  Kanpur Dehat, Uttar Pradesh   impact 99/100  [critical]  (NO specialist here today)
+      needs: anaemia, infant_young_child_feeding, child_immunization, child_illness_care, child_malnutrition
+      basis: demand vs supply
+      -> host: greenfield (no suitable host facility in dataset)
+
+  #3  Kannauj, Uttar Pradesh   impact 99/100  [critical]  (NO specialist here today)
+      needs: anaemia, child_immunization, child_illness_care, child_malnutrition, infant_young_child_feeding
+      basis: demand vs supply
+      -> host: greenfield (no suitable host facility in dataset)
+
+  #4  Chitrakoot, Uttar Pradesh   impact 97/100  [critical]  (NO specialist here today)
+      needs: child_immunization, infant_young_child_feeding, anaemia, child_illness_care, child_malnutrition
+      basis: demand vs supply
+      -> host: greenfield (no suitable host facility in dataset)
+
+  #5  Budaun, Uttar Pradesh   impact 96/100  [critical]  (NO specialist here today)
+      needs: child_illness_care, anaemia, child_immunization, child_malnutrition, infant_young_child_feeding
+      basis: demand vs supply
+      -> host: Lajja Hospital (private, secondary, 0 beds, 0 drs)
+
+=== Recommendations for Dr. Suresh Iyer — cardiologist, soft-prefers South India but open to impact (cardiology) ===
+  preferences: locations=['Andhra Pradesh', 'Karnataka', 'Kerala', 'Tamil Nadu', 'Telangana'] mode=prefer setting=any
+  ! Your preferred states are honored above (Section A). Note: the highest-impact cardiology gap is South District, Sikkim at 100/100 (vs 73/100 best in your preferred states) -- consider widening your locations if you're open to it.
+
+  -- Section A: best options in your preferred states --
+
+  #1  Rajanna Sircilla, Telangana   impact 73/100  [high]  (NO specialist here today)  [Your preferred region - #1 in your states; impact 73/100, rank #23 overall]
+      needs: ncd_hypertension
+      basis: demand vs supply
+      -> host: Sarayu Childrens Hospital (unknown, secondary, 20 beds, 2 drs)
+
+  #2  Siddipet, Telangana   impact 65/100  [high]  (1 here now)  [Your preferred region - #2 in your states; impact 65/100, rank #39 overall]
+      needs: ncd_hypertension
+      basis: demand vs supply
+      -> host: greenfield (no suitable host facility in dataset)
+
+  #3  Yadadri Bhuvanagiri, Telangana   impact 65/100  [high]  (NO specialist here today)  [Your preferred region - #3 in your states; impact 65/100, rank #40 overall]
+      needs: ncd_hypertension
+      basis: demand vs supply
+      -> host: All India Institute of Medical Sciences, Bibinagar (public, tertiary, 0 beds, 0 drs)
+
+  -- Section B: highest-impact options nationally (consider widening) --
+
+  #1  South District, Sikkim   impact 100/100  [high]  (NO specialist here today)  [Highest-impact overall - #1 nationally, rank #1; consider widening]
+      needs: ncd_hypertension
+      basis: demand vs supply
+      -> host: greenfield (no suitable host facility in dataset)
+
+  #2  North District, Sikkim   impact 96/100  [high]  (NO specialist here today)  [Highest-impact overall - #2 nationally, rank #2; consider widening]
+      needs: ncd_hypertension
+      basis: demand vs supply
+      -> host: greenfield (no suitable host facility in dataset)
+
+=== Recommendations for Dr. Meera Nair — OB-GYN, prefers home state Kerala (well-served region) (obstetrics_gynecology) ===
+  preferences: locations=['Kerala'] mode=prefer setting=public
+  ! Your preferred states are honored above (Section A). Note: the highest-impact obstetrics_gynecology gap is Kishanganj, Bihar at 100/100 (vs 0/100 best in your preferred states) -- consider widening your locations if you're open to it.
+
+  -- Section A: best options in your preferred states --
+
+  #1  Alappuzha, Kerala   impact 0/100  [low]  (11 here now)  [Your preferred region - #1 in your states; impact 0/100, rank #484 overall]
+      needs: maternal_nutrition, anaemia, antenatal_care, family_planning_unmet
+      basis: demand vs supply
+      -> host: greenfield (no suitable PUBLIC host facility in dataset)
+
+  #2  Ernakulam, Kerala   impact 0/100  [low]  (46 here now)  [Your preferred region - #2 in your states; impact 0/100, rank #532 overall]
+      needs: antenatal_care, anaemia, family_planning_unmet
+      basis: demand vs supply
+      -> host: General Hospital Ernakulam (public, tertiary, 783 beds, 1 drs)
+
+  #3  Idukki, Kerala   impact 0/100  [low]  (5 here now)  [Your preferred region - #3 in your states; impact 0/100, rank #554 overall]
+      needs: anaemia, antenatal_care, family_planning_unmet
+      basis: demand vs supply
+      -> host: greenfield (no suitable PUBLIC host facility in dataset)
+
+  -- Section B: highest-impact options nationally (consider widening) --
+
+  #1  Kishanganj, Bihar   impact 100/100  [critical]  (NO specialist here today)  [Highest-impact overall - #1 nationally, rank #1; consider widening]
+      needs: postnatal_care, antenatal_care, family_planning_unmet, skilled_birth_attendance, adolescent_pregnancy, maternal_nutrition
+      basis: demand vs supply
+      -> host: greenfield (no suitable PUBLIC host facility in dataset)
+
+  #2  Araria, Bihar   impact 98/100  [critical]  (NO specialist here today)  [Highest-impact overall - #2 nationally, rank #2; consider widening]
+      needs: family_planning_unmet, anaemia, institutional_delivery, maternal_nutrition, menstrual_hygiene, postnatal_care
+      basis: demand vs supply
+      -> host: greenfield (no suitable PUBLIC host facility in dataset)
+
+=== Recommendations for Dr. Ramesh Singh — pediatrician, family roots, fixed to Bihar & UP, public only (pediatrics) ===
+  preferences: locations=['Bihar', 'Uttar Pradesh'] mode=fixed setting=public
+
+  #1  Araria, Bihar   impact 100/100  [critical]  (NO specialist here today)
+      needs: anaemia, child_illness_care, child_malnutrition, child_immunization, infant_young_child_feeding
+      basis: demand vs supply
+      -> host: greenfield (no suitable PUBLIC host facility in dataset)
+
+  #2  Kanpur Dehat, Uttar Pradesh   impact 99/100  [critical]  (NO specialist here today)
+      needs: anaemia, infant_young_child_feeding, child_immunization, child_illness_care, child_malnutrition
+      basis: demand vs supply
+      -> host: greenfield (no suitable PUBLIC host facility in dataset)
+
+  #3  Kannauj, Uttar Pradesh   impact 99/100  [critical]  (NO specialist here today)
+      needs: anaemia, child_immunization, child_illness_care, child_malnutrition, infant_young_child_feeding
+      basis: demand vs supply
+      -> host: greenfield (no suitable PUBLIC host facility in dataset)
+
+=== Recommendations for Dr. Priya Menon — nutritionist/dietitian (thin specialty), open, public (nutrition_dietetics) ===
+  preferences: locations=open mode=open setting=public
+
+  #1  Banka, Bihar   impact 100/100  [critical]  (NO specialist here today)
+      needs: infant_young_child_feeding, maternal_nutrition, child_malnutrition, micronutrient_fortification, adult_overnutrition_obesity
+      basis: need-driven (supply data sparse)
+      -> host: greenfield (no suitable PUBLIC host facility in dataset)
+
+  #2  Udhampur, Jammu & Kashmir   impact 98/100  [critical]  (NO specialist here today)
+      needs: child_malnutrition, micronutrient_fortification, infant_young_child_feeding, adult_overnutrition_obesity
+      basis: need-driven (supply data sparse)
+      -> host: greenfield (no suitable PUBLIC host facility in dataset)
+
+  #3  Fatehpur, Uttar Pradesh   impact 97/100  [critical]  (NO specialist here today)
+      needs: child_malnutrition, adult_overnutrition_obesity, maternal_nutrition, infant_young_child_feeding, micronutrient_fortification
+      basis: need-driven (supply data sparse)
+      -> host: greenfield (no suitable PUBLIC host facility in dataset)
+
+  #4  Sheikhpura, Bihar   impact 97/100  [critical]  (NO specialist here today)
+      needs: maternal_nutrition, infant_young_child_feeding, child_malnutrition, adult_overnutrition_obesity, micronutrient_fortification
+      basis: need-driven (supply data sparse)
+      -> host: Primary Health Centre Marauna (public, secondary, 0 beds, 0 drs)
+      -> host: Referal Hospital (public, tertiary, 0 beds, 0 drs)
+
+  #5  Dohad, Gujarat   impact 95/100  [critical]  (NO specialist here today)
+      needs: child_malnutrition, adult_overnutrition_obesity, maternal_nutrition, micronutrient_fortification, infant_young_child_feeding
+      basis: need-driven (supply data sparse)
+      -> host: greenfield (no suitable PUBLIC host facility in dataset)
+
+=== Recommendations for Dr. Kavya Reddy — adolescent medicine (thin specialty), fixed to Bihar (adolescent_medicine) ===
+  preferences: locations=['Bihar'] mode=fixed setting=any
+
+  #1  Saharsa, Bihar   impact 95/100  [high]  (NO specialist here today)
+      needs: child_marriage, adolescent_pregnancy, menstrual_hygiene
+      basis: need-driven (supply data sparse)
+      -> host: Lord Buddha Koshi Medical College & Hospital Saharsa (private, tertiary, 638 beds, 0 drs)
+      -> host: Dr. Pranjal Shri Hospital (Dr. Ravindra & Dr. Vinita) (private, tertiary, 0 beds, 0 drs)
+      -> host: Shree Narayan Medical Institute and Hospital (private, secondary, 780 beds, 0 drs)
+
+  #2  Supaul, Bihar   impact 94/100  [high]  (NO specialist here today)
+      needs: menstrual_hygiene, child_marriage, adolescent_pregnancy
+      basis: need-driven (supply data sparse)
+      -> host: greenfield (no suitable host facility in dataset)
+
+  #3  Madhepura, Bihar   impact 94/100  [high]  (NO specialist here today)
+      needs: adolescent_pregnancy, child_marriage, menstrual_hygiene
+      basis: need-driven (supply data sparse)
+      -> host: Koshi Hospital (unknown, secondary, 0 beds, 0 drs)
+
+=== Recommendations for Dr. Arjun Khanna — internist, open but avoids NE & island states, private (internal_medicine) ===
+  preferences: locations=open mode=open setting=private
+
+  #1  Tarn Taran, Punjab   impact 96/100  [critical]  (NO specialist here today)
+      needs: adult_overnutrition_obesity, ncd_diabetes, ncd_hypertension, anaemia
+      basis: demand vs supply
+      -> host: greenfield (no suitable private host facility in dataset)
+
+  #2  Nayagarh, Odisha   impact 82/100  [critical]  (NO specialist here today)
+      needs: ncd_diabetes, adult_overnutrition_obesity, ncd_hypertension, anaemia
+      basis: demand vs supply
+      -> host: greenfield (no suitable private host facility in dataset)
+
+  #3  Jagatsinghapur, Odisha   impact 81/100  [critical]  (NO specialist here today)
+      needs: adult_overnutrition_obesity, ncd_diabetes, ncd_hypertension, anaemia
+      basis: demand vs supply
+      -> host: greenfield (no suitable private host facility in dataset)
+
+  #4  Yanam, Puducherry   impact 80/100  [critical]  (NO specialist here today)
+      needs: ncd_hypertension, adult_overnutrition_obesity, ncd_diabetes, anaemia
+      basis: demand vs supply
+      -> host: greenfield (no suitable private host facility in dataset)
+
+=== Recommendations for Dr. Neha Gupta — dermatologist, no NFHS need-gap signal (graceful-handling test) (dermatologist) ===
+  [no_gap_signal] 'dermatologist' has no NFHS need-based gap signal (not one of the 17 need-driven specialties). No district recommendation can be made from health-need gaps.

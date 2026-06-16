@@ -1,0 +1,74 @@
+[
+  {
+    "name": "Dr. Asha Verma — pediatrician, mission-driven, will go anywhere (max-impact baseline)",
+    "specialty": "pediatrician",
+    "preferred_states": [],
+    "location_mode": "open",
+    "avoid_states": [],
+    "setting": "any",
+    "top_k": 5
+  },
+  {
+    "name": "Dr. Suresh Iyer — cardiologist, soft-prefers South India but open to impact",
+    "specialty": "cardiologist",
+    "preferred_states": ["Karnataka", "Tamil Nadu", "Telangana", "Kerala", "Andhra Pradesh"],
+    "location_mode": "prefer",
+    "avoid_states": [],
+    "setting": "any",
+    "top_k": 5
+  },
+  {
+    "name": "Dr. Meera Nair — OB-GYN, prefers home state Kerala (well-served region)",
+    "specialty": "obgyn",
+    "preferred_states": ["Kerala"],
+    "location_mode": "prefer",
+    "avoid_states": [],
+    "setting": "public",
+    "top_k": 5
+  },
+  {
+    "name": "Dr. Ramesh Singh — pediatrician, family roots, fixed to Bihar & UP, public only",
+    "specialty": "pediatrician",
+    "preferred_states": ["Bihar", "Uttar Pradesh"],
+    "location_mode": "fixed",
+    "avoid_states": [],
+    "setting": "public",
+    "top_k": 3
+  },
+  {
+    "name": "Dr. Priya Menon — nutritionist/dietitian (thin specialty), open, public",
+    "specialty": "nutritionist",
+    "preferred_states": [],
+    "location_mode": "open",
+    "avoid_states": [],
+    "setting": "public",
+    "top_k": 5
+  },
+  {
+    "name": "Dr. Kavya Reddy — adolescent medicine (thin specialty), fixed to Bihar",
+    "specialty": "adolescent medicine",
+    "preferred_states": ["Bihar"],
+    "location_mode": "fixed",
+    "avoid_states": [],
+    "setting": "any",
+    "top_k": 3
+  },
+  {
+    "name": "Dr. Arjun Khanna — internist, open but avoids NE & island states, private",
+    "specialty": "internist",
+    "preferred_states": [],
+    "location_mode": "open",
+    "avoid_states": ["Sikkim", "Arunachal Pradesh", "Andaman & Nicobar Islands", "Nagaland", "Manipur", "Mizoram", "Meghalaya", "Tripura", "Ladakh"],
+    "setting": "private",
+    "top_k": 4
+  },
+  {
+    "name": "Dr. Neha Gupta — dermatologist, no NFHS need-gap signal (graceful-handling test)",
+    "specialty": "dermatologist",
+    "preferred_states": ["Maharashtra"],
+    "location_mode": "prefer",
+    "avoid_states": [],
+    "setting": "any",
+    "top_k": 5
+  }
+]

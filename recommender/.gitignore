@@ -1,0 +1,4 @@
+# Local virtualenv used only for ad-hoc analysis — the recommender itself is pure stdlib.
+.venv/
+__pycache__/
+*.pyc
