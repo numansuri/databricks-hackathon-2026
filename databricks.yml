@@ -1,6 +1,10 @@
 bundle:
   name: referral_copilot
 
+sync:
+  exclude:
+    - recommender/data/*.csv
+
 resources:
   apps:
     referral_copilot:
