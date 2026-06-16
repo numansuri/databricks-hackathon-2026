@@ -677,7 +677,7 @@ textarea {
   padding: 18px;
   border-right: 1px solid var(--line);
   background: #fbfdfc;
-  overflow: auto;
+  overflow: hidden;
 }
 
 .panelHeader,
@@ -722,7 +722,7 @@ textarea {
 
 .quickPromptRow button {
   flex: 0 0 auto;
-  max-width: 210px;
+  max-width: 180px;
   min-height: 36px;
   padding: 0 11px;
   border: 1px solid var(--line);
@@ -736,12 +736,101 @@ textarea {
   white-space: nowrap;
 }
 
+.dataSourceStrip {
+  min-height: 38px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  background: var(--surfaceElevated);
+  font-size: 12px;
+  font-weight: 850;
+  line-height: 1.2;
+}
+
+.dataSourceStrip span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dataSourceStrip strong {
+  color: var(--exchange);
+  white-space: nowrap;
+}
+
+.dataSourceStrip.demo strong {
+  color: var(--amber);
+}
+
+.chatDock {
+  flex: 0 0 auto;
+  min-height: 248px;
+  max-height: min(42vh, 360px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 -12px 30px rgba(23, 32, 28, 0.06);
+}
+
+.chatDockHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  font-weight: 900;
+  color: var(--muted);
+}
+
+.chatDockHeader span {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.chatDockHeader strong {
+  flex: 0 0 auto;
+  color: var(--exchange);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.chatDock .quickPromptRow {
+  display: grid;
+  grid-template-columns: 1fr;
+  overflow: visible;
+}
+
+.chatDock .quickPromptRow button {
+  width: 100%;
+  max-width: none;
+  height: auto;
+  min-height: 34px;
+  padding: 8px 10px;
+  justify-content: flex-start;
+  line-height: 1.2;
+  text-align: left;
+  white-space: normal;
+}
+
 .chatLog {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  min-height: 180px;
-  max-height: 260px;
+  min-height: 104px;
+  max-height: 168px;
   overflow: auto;
   padding: 12px;
   background: var(--soft);
@@ -749,11 +838,13 @@ textarea {
 }
 
 .message {
-  max-width: 88%;
+  max-width: 100%;
   padding: 11px 12px;
   border-radius: 8px;
   font-size: 14px;
   line-height: 1.45;
+  overflow-wrap: anywhere;
+  word-break: normal;
 }
 
 .message.assistant {
@@ -776,7 +867,14 @@ textarea {
   font-weight: 800;
 }
 
+.message.streaming {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
 .message.thinking svg,
+.message.streaming svg,
 .chatInput button:disabled svg {
   animation: spin 900ms linear infinite;
 }
@@ -808,6 +906,7 @@ textarea {
   color: var(--ink);
   background: #fff;
   outline: 0;
+  text-overflow: ellipsis;
 }
 
 .chatInput button {
@@ -837,6 +936,13 @@ textarea {
   gap: 10px;
 }
 
+.sidePanel > .resultStack {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 2px;
+}
+
 .facilityCard,
 .plannedItem,
 .emptyState,
@@ -862,7 +968,14 @@ textarea {
 }
 
 .facilityTopline {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) auto;
   align-items: flex-start;
+  gap: 12px;
+}
+
+.facilityTopline > div {
+  min-width: 0;
 }
 
 .facilityTopline h3,
@@ -872,6 +985,7 @@ textarea {
   font-size: 15px;
   line-height: 1.25;
   letter-spacing: 0;
+  overflow-wrap: anywhere;
 }
 
 .facilityTopline p,
@@ -880,13 +994,14 @@ textarea {
   margin: 4px 0 0;
   color: var(--muted);
   font-size: 13px;
+  overflow-wrap: anywhere;
 }
 
 .tierDot {
   flex: 0 0 auto;
   width: 12px;
   height: 12px;
-  margin-top: 4px;
+  margin-top: 5px;
   border-radius: 50%;
 }
 
@@ -922,6 +1037,7 @@ textarea {
 
 .facilityMeta {
   display: flex;
+  flex-wrap: wrap;
   gap: 12px;
   margin-top: 12px;
   color: var(--muted);
@@ -940,6 +1056,7 @@ textarea {
   color: #405149;
   font-size: 14px;
   line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .cardActions {
@@ -951,8 +1068,16 @@ textarea {
 
 .cardActions button {
   min-height: 36px;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
   padding: 0 10px;
   font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .mapWorkspace {

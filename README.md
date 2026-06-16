@@ -123,16 +123,19 @@ The saved doctor profile is stored per user in `localStorage` under `referralCop
 
 The Search tab has:
 
-- a chat-style interaction area
+- a bottom-docked streaming chat interaction area
 - quick prompt buttons
 - a search input
 - ranked pseudo facility cards
+- a visible data-source strip showing whether search is using local demo data or Lakehouse mode
 - a Google map or fallback map
 - a map search field for cities, districts, and hospital locations
 - Google Places search results shown as a separate live-results layer when the Maps key supports Places
 - an evidence drawer for the selected facility
 
-The chatbot calls the local server at `POST /api/chat`. The server uses `OPENAI_API_KEY`, `OPENAI_MODEL` (default `gpt-5.5`), and `OPENAI_REASONING_EFFORT` (default `medium`). Server-side guardrails keep the assistant focused on hospital search, doctor context, outreach, map logistics, and two-way scheduling. If the OpenAI key is missing or the request fails, the endpoint returns a local fallback response so the UI remains usable.
+The chatbot streams from `POST /api/chat/stream` and keeps `POST /api/chat` as a non-streaming structured fallback. The server uses `OPENAI_API_KEY`, `OPENAI_MODEL` (default `gpt-5.5`), `OPENAI_REASONING_EFFORT` (default `medium`), and `OPENAI_STREAM_TIMEOUT_MS` (default `45000`). Server-side guardrails keep the assistant focused on hospital search, doctor context, outreach, map logistics, and two-way scheduling. If the OpenAI key is missing or the streaming request fails, the endpoint streams a local fallback response so the UI remains usable.
+
+`GET /api/data-status` reports the active data mode. The current app default is `SHIFTLINK_DATA_MODE=demo`, which means chat and facility cards use the client-provided pseudo facility list. The Lakehouse tables are built in Databricks, but the runtime app is not querying those tables until the future SQL-backed path is implemented.
 
 ### Shortlist
 
@@ -203,6 +206,7 @@ Add a server-side OpenAI key:
 OPENAI_API_KEY=your_openai_api_key
 OPENAI_MODEL=gpt-5.5
 OPENAI_REASONING_EFFORT=medium
+OPENAI_STREAM_TIMEOUT_MS=45000
 OPENAI_TRANSCRIBE_MODEL=gpt-4o-transcribe
 ```
 
@@ -243,7 +247,7 @@ Run the production start command used by Databricks Apps:
 npm run start
 ```
 
-`npm run start` builds the Vite app and starts the Node server that serves `dist/` plus `/api/chat`, `/api/transcribe`, `/api/config`, and `/api/health`.
+`npm run start` builds the Vite app and starts the Node server that serves `dist/` plus `/api/chat`, `/api/chat/stream`, `/api/transcribe`, `/api/config`, `/api/data-status`, and `/api/health`.
 
 ## Databricks Apps Configuration
 
@@ -256,7 +260,8 @@ npm run start
 - Google Maps secret reference: scope `referral-copilot`, key `google-maps-api-key`
 - OpenAI secret reference: scope `referral-copilot`, key `openai-api-key`
 - Runtime env aliases: `GOOGLE_MAPS_API_KEY`, `VITE_GOOGLE_MAPS_API_KEY`, and `OPENAI_API_KEY`
-- OpenAI defaults in the app config: `OPENAI_MODEL=gpt-5.5`, `OPENAI_REASONING_EFFORT=medium`
+- OpenAI defaults in the app config: `OPENAI_MODEL=gpt-5.5`, `OPENAI_REASONING_EFFORT=medium`, `OPENAI_STREAM_TIMEOUT_MS=45000`
+- Data source mode: `SHIFTLINK_DATA_MODE=demo`
 
 The Databricks app resource name and URL still use the earlier `referral-copilot` deployment name, while the product UI shown to users is Shiftlink.
 
@@ -324,6 +329,7 @@ At the time this README was written:
 - `npm audit --json` reported zero vulnerabilities.
 - `GET /api/health` confirmed the local server sees the OpenAI configuration.
 - `POST /api/chat` returned an OpenAI `gpt-5.5` structured response with a `mapQuery`.
+- `POST /api/chat/stream` emitted OpenAI streaming text deltas and a final metadata event with `dataAccess.mode=demo`.
 - `POST /api/chat` redirects out-of-scope, secret/prompt, and patient-specific clinical advice requests before sending eligible messages to OpenAI.
 - The in-app browser verified a map toolbar search for `hospitals near Jaipur` returned 12 Google Places hospital markers.
 - The in-app browser verified a chatbot request for `hospitals near Udaipur` produced an assistant reply, updated the map query, and rendered 12 Google Places hospital markers.
@@ -344,10 +350,10 @@ At the time this README was written:
 
 ## Next Engineering Steps
 
-1. Add a FastAPI backend.
-2. Implement `/api/transcribe`.
-3. Add backend user accounts, password hashing, session management, and role authorization.
-4. Add Databricks SQL access for facility search.
+1. Wire runtime facility search to the Lakehouse tables and change `SHIFTLINK_DATA_MODE` from `demo` to `lakehouse`.
+2. Add backend user accounts, password hashing, session management, and role authorization.
+3. Persist doctor profiles, hospital profiles, chat events, map searches, and schedule requests to `workspace.shiftlink_app`.
+4. Replace the browser-local pseudo facility array with API-loaded results from Databricks SQL.
 5. Implement backend profile, shortlist, schedule, and hospital decision persistence.
 6. Replace pseudo facility data with scored Databricks results.
 7. Add LLM-backed query parsing and evidence scoring.

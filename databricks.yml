@@ -42,6 +42,10 @@ resources:
             value: gpt-5.5
           - name: OPENAI_REASONING_EFFORT
             value: medium
+          - name: OPENAI_STREAM_TIMEOUT_MS
+            value: "45000"
+          - name: SHIFTLINK_DATA_MODE
+            value: demo
 
 targets:
   dev:

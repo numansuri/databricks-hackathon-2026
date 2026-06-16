@@ -8,6 +8,7 @@ import {
   ClipboardList,
   Clock3,
   Copy,
+  Database,
   ExternalLink,
   FileText,
   Hospital,
@@ -1170,6 +1171,81 @@ function LeftPanel(props) {
   return <SearchPanel {...props} />;
 }
 
+function parseSseBlock(block) {
+  const event = { type: "message", data: null };
+  const dataLines = [];
+
+  block.split("\n").forEach((line) => {
+    if (line.startsWith("event:")) {
+      event.type = line.slice(6).trim();
+    }
+    if (line.startsWith("data:")) {
+      dataLines.push(line.slice(5).trimStart());
+    }
+  });
+
+  if (dataLines.length) {
+    event.data = JSON.parse(dataLines.join("\n"));
+  }
+
+  return event;
+}
+
+async function readChatStream(response, onDelta) {
+  if (!response.body) {
+    return response.json();
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let finalPayload = null;
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    let boundaryIndex = buffer.indexOf("\n\n");
+    while (boundaryIndex >= 0) {
+      const block = buffer.slice(0, boundaryIndex).trim();
+      buffer = buffer.slice(boundaryIndex + 2);
+      if (block) {
+        const event = parseSseBlock(block);
+        if (event.type === "delta" && typeof event.data?.delta === "string") {
+          onDelta(event.data.delta);
+        }
+        if (event.type === "done") {
+          finalPayload = event.data;
+        }
+        if (event.type === "error") {
+          throw new Error(event.data?.message || "Chat stream failed");
+        }
+      }
+      boundaryIndex = buffer.indexOf("\n\n");
+    }
+  }
+
+  return finalPayload;
+}
+
+function DataSourceStrip({ dataAccess, facilityCount }) {
+  const sourceMode = dataAccess?.mode || "demo";
+  const isLakehouse = sourceMode === "lakehouse";
+  const label = dataAccess?.label || (isLakehouse ? "Lakehouse Delta tables" : "Local demo facility list");
+  const detail = isLakehouse
+    ? `${dataAccess?.activeTables?.length || 0} active tables`
+    : `${facilityCount} local records`;
+
+  return (
+    <div className={`dataSourceStrip ${isLakehouse ? "lakehouse" : "demo"}`}>
+      <Database size={15} />
+      <span>{label}</span>
+      <strong>{detail}</strong>
+    </div>
+  );
+}
+
 function SearchPanel({
   facilities,
   selectedFacilityId,
@@ -1186,27 +1262,90 @@ function SearchPanel({
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const chatLogRef = useRef(null);
+  const [dataAccess, setDataAccess] = useState({
+    mode: "demo",
+    label: "Local demo facility list",
+    facilityCount: facilities.length
+  });
   const [messages, setMessages] = useState([
     {
+      id: "welcome",
       role: "assistant",
-      text: `I’ll prioritize ${profile.tags.specialties.join(", ") || "your specialties"} and show which hospital requests are worth accepting, countering, or holding. You can also say “update my profile” or “forget my Rajasthan preference” and I’ll adjust your context.`
+      text: `I’ll prioritize ${profile.tags.specialties.join(", ") || "your specialties"} and help compare requests, map searches, outreach, and scheduling. You can update or remove profile context here too.`
     }
   ]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadDataStatus() {
+      try {
+        const response = await fetch("/api/data-status", { cache: "no-store" });
+        if (!response.ok) throw new Error("Data status unavailable");
+        const status = await response.json();
+        if (!cancelled) {
+          setDataAccess(status);
+        }
+      } catch {
+        if (!cancelled) {
+          setDataAccess((current) => ({
+            ...current,
+            message: "Data status endpoint unavailable; showing client-side facility count."
+          }));
+        }
+      }
+    }
+
+    loadDataStatus();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    chatLogRef.current?.scrollTo({
+      top: chatLogRef.current.scrollHeight,
+      behavior: "smooth"
+    });
+  }, [messages]);
+
+  function applyChatMetadata(data) {
+    setDataAccess(data.dataAccess || dataAccess);
+
+    const firstFacilityId = data.facilityIds?.find((id) => facilities.some((facility) => facility.id === id));
+    if (firstFacilityId) {
+      setSelectedFacilityId(firstFacilityId);
+    }
+    if (data.mapQuery) {
+      onMapSearch?.(data.mapQuery);
+    }
+  }
 
   async function submitSearch(query) {
     const nextQuery = query || input;
     const trimmedQuery = nextQuery.trim();
     if (!trimmedQuery || loading) return;
 
-    const userMessage = { role: "user", text: trimmedQuery };
+    const userMessage = { id: crypto.randomUUID(), role: "user", text: trimmedQuery };
+    const assistantMessageId = crypto.randomUUID();
     const conversation = [...messages, userMessage];
-    setMessages(conversation);
+    setMessages([
+      ...conversation,
+      {
+        id: assistantMessageId,
+        role: "assistant",
+        text: "",
+        streaming: true
+      }
+    ]);
     setInput("");
     setError("");
     setLoading(true);
 
     try {
-      const response = await fetch("/api/chat", {
+      const response = await fetch("/api/chat/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1220,31 +1359,42 @@ function SearchPanel({
         })
       });
 
-      const data = await response.json();
       if (!response.ok) {
+        const data = await response.json();
         throw new Error(data.message || "Chat request failed");
       }
 
-      const firstFacilityId = data.facilityIds?.find((id) => facilities.some((facility) => facility.id === id));
-      if (firstFacilityId) {
-        setSelectedFacilityId(firstFacilityId);
-      }
-      if (data.mapQuery) {
-        onMapSearch?.(data.mapQuery);
-      }
+      let streamedText = "";
+      const data = await readChatStream(response, (delta) => {
+        streamedText += delta;
+        setMessages((current) =>
+          current.map((message) =>
+            message.id === assistantMessageId ? { ...message, text: `${message.text}${delta}` } : message
+          )
+        );
+      });
+
+      if (!data) throw new Error("Chat stream ended without a final response.");
+      applyChatMetadata(data);
 
       setMessages((current) => [
-        ...current,
-        {
-          role: "assistant",
-          text: data.reply || "I found relevant facilities and updated the map search."
-        }
+        ...current.map((message) =>
+          message.id === assistantMessageId
+            ? {
+                ...message,
+                text: streamedText || data.reply || "I found relevant facilities and updated the map search.",
+                streaming: false,
+                source: data.source
+              }
+            : message
+        )
       ]);
     } catch (chatError) {
       setError(chatError.message || "The assistant could not respond.");
       setMessages((current) => [
-        ...current,
+        ...current.filter((message) => message.id !== assistantMessageId),
         {
+          id: crypto.randomUUID(),
           role: "assistant",
           text: "I could not reach the assistant just now. You can still search the map and schedule from the facility cards."
         }
@@ -1263,44 +1413,7 @@ function SearchPanel({
         </div>
         <span className="countBadge">{facilities.length} matches</span>
       </div>
-      <div className="quickPromptRow">
-        {quickPrompts.map((prompt) => (
-          <button key={prompt} onClick={() => submitSearch(prompt)} disabled={loading}>
-            {prompt}
-          </button>
-        ))}
-      </div>
-      <div className="chatLog">
-        {messages.map((message, index) => (
-          <div key={`${message.role}-${index}`} className={`message ${message.role}`}>
-            {message.text}
-          </div>
-        ))}
-        {loading && (
-          <div className="message assistant thinking">
-            <LoaderCircle size={15} />
-            Thinking through the exchange
-          </div>
-        )}
-      </div>
-      {error && <p className="chatError">{error}</p>}
-      <form
-        className="chatInput"
-        onSubmit={(event) => {
-          event.preventDefault();
-          submitSearch();
-        }}
-      >
-        <input
-          value={input}
-          onChange={(event) => setInput(event.target.value)}
-          placeholder="Ask about facilities, profile context, or map search"
-          disabled={loading}
-        />
-        <button title="Send search" type="submit" disabled={loading}>
-          {loading ? <LoaderCircle size={18} /> : <Send size={18} />}
-        </button>
-      </form>
+      <DataSourceStrip dataAccess={dataAccess} facilityCount={facilities.length} />
       <div className="resultStack">
         {facilities.map((facility) => (
           <FacilityCard
@@ -1320,6 +1433,57 @@ function SearchPanel({
             }
           />
         ))}
+      </div>
+      <div className="chatDock">
+        <div className="chatDockHeader">
+          <span>
+            <MessageSquareText size={15} />
+            Chat
+          </span>
+          <strong>{loading ? "Streaming" : "Ready"}</strong>
+        </div>
+        <div className="quickPromptRow">
+          {quickPrompts.map((prompt) => (
+            <button key={prompt} onClick={() => submitSearch(prompt)} disabled={loading}>
+              {prompt}
+            </button>
+          ))}
+        </div>
+        <div className="chatLog" ref={chatLogRef}>
+          {messages.map((message, index) => (
+            <div
+              key={message.id || `${message.role}-${index}`}
+              className={`message ${message.role} ${message.streaming ? "streaming" : ""}`}
+            >
+              {message.streaming && !message.text ? (
+                <>
+                  <LoaderCircle size={14} />
+                  Starting response
+                </>
+              ) : (
+                message.text
+              )}
+            </div>
+          ))}
+        </div>
+        {error && <p className="chatError">{error}</p>}
+        <form
+          className="chatInput"
+          onSubmit={(event) => {
+            event.preventDefault();
+            submitSearch();
+          }}
+        >
+          <input
+            value={input}
+            onChange={(event) => setInput(event.target.value)}
+            placeholder="Ask about facilities, context, or map"
+            disabled={loading}
+          />
+          <button title="Send search" type="submit" disabled={loading}>
+            {loading ? <LoaderCircle size={18} /> : <Send size={18} />}
+          </button>
+        </form>
       </div>
     </aside>
   );

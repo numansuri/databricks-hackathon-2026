@@ -15,8 +15,10 @@ const openaiApiKey = process.env.OPENAI_API_KEY || "";
 const openai = openaiApiKey ? new OpenAI({ apiKey: openaiApiKey }) : null;
 const openaiModel = process.env.OPENAI_MODEL || "gpt-5.5";
 const openaiReasoningEffort = process.env.OPENAI_REASONING_EFFORT || "medium";
+const openaiStreamTimeoutMs = Number(process.env.OPENAI_STREAM_TIMEOUT_MS || 45000);
 const googleMapsApiKey = process.env.GOOGLE_MAPS_API_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY || "";
 const googleMapsMapId = process.env.GOOGLE_MAPS_MAP_ID || process.env.VITE_GOOGLE_MAP_ID || "DEMO_MAP_ID";
+const dataMode = process.env.SHIFTLINK_DATA_MODE === "lakehouse" ? "lakehouse" : "demo";
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 15 * 1024 * 1024 }
@@ -103,6 +105,17 @@ const defaultQuickPrompts = [
   "Update my profile context"
 ];
 
+const lakehouseTables = [
+  "workspace.virtue_foundation_enriched.gold_facilities",
+  "workspace.virtue_foundation_enriched.gold_pincode",
+  "workspace.virtue_foundation_enriched.gold_nfhs_district",
+  "workspace.virtue_foundation_enriched.fct_facility_specialty",
+  "workspace.virtue_foundation_enriched.gold_demand_supply_gap",
+  "workspace.shiftlink_app.users",
+  "workspace.shiftlink_app.doctor_profiles",
+  "workspace.shiftlink_app.schedule_requests"
+];
+
 const shiftlinkInstructions = [
   "You are Shiftlink's coverage assistant for doctors coordinating hospital referrals, volunteer visits, and scheduling handoffs.",
   "Stay within Shiftlink scope: hospital and clinic search, doctor profile context, outreach drafts, schedule requests, map logistics, and app workflow help.",
@@ -116,8 +129,30 @@ const shiftlinkInstructions = [
   "Prefer concrete, operational language. Keep replies under 120 words unless the doctor asks for detail."
 ].join("\n");
 
+const shiftlinkStreamingInstructions = [
+  shiftlinkInstructions,
+  "Write only the doctor-facing assistant reply text. Do not output JSON, code fences, or metadata.",
+  "The app will attach map, facility, profile, guardrail, and data-source metadata after the streamed text finishes."
+].join("\n");
+
 function safeArray(value) {
   return Array.isArray(value) ? value : [];
+}
+
+function getDataAccess(facilities = []) {
+  const facilityCount = safeArray(facilities).length;
+  return {
+    mode: dataMode,
+    label: dataMode === "lakehouse" ? "Lakehouse Delta tables" : "Local demo facility list",
+    activeTables: dataMode === "lakehouse" ? lakehouseTables : [],
+    expectedLakehouseTables: lakehouseTables,
+    facilityCount,
+    verified: dataMode === "lakehouse",
+    message:
+      dataMode === "lakehouse"
+        ? "Runtime is configured for Lakehouse-backed queries."
+        : "Runtime chat and cards are using the client-provided demo facility list. Lakehouse tables exist, but this endpoint is not querying them yet."
+  };
 }
 
 function isAllowedIntent(intent) {
@@ -132,7 +167,7 @@ function isAllowedIntent(intent) {
   ].includes(intent);
 }
 
-function normalizeChatPayload(payload, source = "openai") {
+function normalizeChatPayload(payload, source = "openai", dataAccess = getDataAccess()) {
   return {
     reply:
       typeof payload.reply === "string" && payload.reply.trim()
@@ -155,7 +190,42 @@ function normalizeChatPayload(payload, source = "openai") {
           ? payload.guardrail.reason.trim()
           : "in_scope"
     },
+    dataAccess,
     source
+  };
+}
+
+function inferChatMetadata(message, reply, facilities) {
+  const lower = message.toLowerCase();
+  const combined = `${lower} ${String(reply || "").toLowerCase()}`;
+  const wantsMap =
+    /\b(map|near|nearby|around|search|find|location|hospital|clinic|city|district|mumbai|delhi|ahmedabad|jaipur|udaipur|rajasthan|gujarat|maharashtra)\b/.test(
+      lower
+    );
+  const profileAdd = /\b(add|update|include|remember)\b/.test(lower);
+  const profileRemove = /\b(remove|forget|delete|drop)\b/.test(lower);
+  const matchedFacilityIds = safeArray(facilities)
+    .filter((facility) => {
+      const fields = [facility.id, facility.name, facility.city, facility.state, facility.match]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return fields && fields.split(/\s+/).some((part) => part.length > 4 && combined.includes(part));
+    })
+    .map((facility) => facility.id)
+    .slice(0, 3);
+  const strong = safeArray(facilities).find((facility) => facility.tier === "strong") || safeArray(facilities)[0];
+
+  return {
+    intent: profileAdd || profileRemove ? "profile_update" : wantsMap ? "map_search" : "facility_search",
+    mapQuery: wantsMap ? message : null,
+    facilityIds: matchedFacilityIds.length ? matchedFacilityIds : strong ? [strong.id] : [],
+    profileUpdates: {
+      add: profileAdd ? [message] : [],
+      remove: profileRemove ? [message] : []
+    },
+    suggestedQuickPrompts: defaultQuickPrompts,
+    guardrail: { status: "allowed", reason: "in_scope" }
   };
 }
 
@@ -223,7 +293,7 @@ function evaluateChatGuardrail(message) {
   return { blocked: false, reason: "in_scope" };
 }
 
-function guardrailChatResponse(guardrail) {
+function guardrailChatResponse(guardrail, facilities = []) {
   return normalizeChatPayload(
     {
       reply: guardrail.reply,
@@ -234,37 +304,74 @@ function guardrailChatResponse(guardrail) {
       suggestedQuickPrompts: defaultQuickPrompts,
       guardrail: { status: "redirected", reason: guardrail.reason }
     },
-    "guardrail"
+    "guardrail",
+    getDataAccess(facilities)
   );
 }
 
 function fallbackChatResponse(message, facilities) {
-  const lower = message.toLowerCase();
-  const wantsMap =
-    /\b(map|near|nearby|around|search|find|location|hospital|clinic|city|district|mumbai|delhi|ahmedabad|rajasthan|gujarat)\b/.test(
-      lower
-    );
-  const profileAdd = /\b(add|update|include|remember)\b/.test(lower);
-  const profileRemove = /\b(remove|forget|delete|drop)\b/.test(lower);
-  const strong = facilities.find((facility) => facility.tier === "strong") || facilities[0];
+  const strong = safeArray(facilities).find((facility) => facility.tier === "strong") || safeArray(facilities)[0];
+  const metadata = inferChatMetadata(message, "", facilities);
 
   return normalizeChatPayload(
     {
       reply: openaiApiKey
         ? `I could not reach the LLM just now, so I’m using the local fallback. ${strong?.name || "The strongest match"} still looks like the best dataset-backed option, and I can run that map search for you.`
         : "The OpenAI key is not available to the server yet. I’m using the local fallback so you can keep testing search, profile, and scheduling flows.",
-      intent: profileAdd || profileRemove ? "profile_update" : wantsMap ? "map_search" : "facility_search",
-      mapQuery: wantsMap ? message : null,
-      facilityIds: strong ? [strong.id] : [],
-      profileUpdates: {
-        add: profileAdd ? [message] : [],
-        remove: profileRemove ? [message] : []
-      },
-      suggestedQuickPrompts: defaultQuickPrompts,
-      guardrail: { status: "allowed", reason: "in_scope" }
+      ...metadata
     },
-    "fallback"
+    "fallback",
+    getDataAccess(facilities)
   );
+}
+
+function writeSse(res, event, data) {
+  res.write(`event: ${event}\n`);
+  res.write(`data: ${JSON.stringify(data)}\n\n`);
+}
+
+function prepareSse(res) {
+  res.status(200);
+  res.set({
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache, no-transform",
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no"
+  });
+  res.flushHeaders?.();
+}
+
+async function streamStaticChatPayload(res, payload) {
+  const chunks = payload.reply.match(/\S+\s*/g) || [payload.reply];
+  for (const chunk of chunks) {
+    writeSse(res, "delta", { delta: chunk });
+  }
+  writeSse(res, "done", payload);
+  res.end();
+}
+
+function createTimeoutSignal(timeoutMs) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  return {
+    signal: controller.signal,
+    abort: () => controller.abort(),
+    cancel: () => clearTimeout(timeout)
+  };
+}
+
+async function nextStreamEvent(iterator, timeoutMs) {
+  let timeout;
+  try {
+    return await Promise.race([
+      iterator.next(),
+      new Promise((_, reject) => {
+        timeout = setTimeout(() => reject(new Error("OpenAI stream timed out.")), timeoutMs);
+      })
+    ]);
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 app.get("/api/health", (req, res) => {
@@ -273,8 +380,10 @@ app.get("/api/health", (req, res) => {
     ok: true,
     openaiConfigured: Boolean(openai),
     googleMapsConfigured: Boolean(googleMapsApiKey),
+    dataMode,
     model: openaiModel,
-    reasoningEffort: openaiReasoningEffort
+    reasoningEffort: openaiReasoningEffort,
+    streamTimeoutMs: openaiStreamTimeoutMs
   });
 });
 
@@ -285,9 +394,16 @@ app.get("/api/config", (req, res) => {
     googleMapsMapId,
     googleMapsConfigured: Boolean(googleMapsApiKey),
     openaiConfigured: Boolean(openai),
+    dataMode,
     model: openaiModel,
-    reasoningEffort: openaiReasoningEffort
+    reasoningEffort: openaiReasoningEffort,
+    streamTimeoutMs: openaiStreamTimeoutMs
   });
+});
+
+app.get("/api/data-status", (req, res) => {
+  res.set("Cache-Control", "no-store");
+  res.json(getDataAccess());
 });
 
 app.post("/api/chat", async (req, res) => {
@@ -308,7 +424,7 @@ app.post("/api/chat", async (req, res) => {
 
   const guardrail = evaluateChatGuardrail(trimmedMessage);
   if (guardrail.blocked) {
-    return res.json(guardrailChatResponse(guardrail));
+    return res.json(guardrailChatResponse(guardrail, safeArray(facilities)));
   }
 
   if (!openai) {
@@ -360,10 +476,128 @@ app.post("/api/chat", async (req, res) => {
     });
 
     const parsed = JSON.parse(response.output_text || "{}");
-    res.json(normalizeChatPayload(parsed));
+    res.json(normalizeChatPayload(parsed, "openai", getDataAccess(facilities)));
   } catch (error) {
     console.error("OpenAI chat failed", error);
     res.json(fallbackChatResponse(trimmedMessage, safeArray(facilities)));
+  }
+});
+
+app.post("/api/chat/stream", async (req, res) => {
+  const {
+    message = "",
+    messages = [],
+    profile = null,
+    facilities = [],
+    selectedFacility = null,
+    schedule = [],
+    requests = []
+  } = req.body || {};
+  const safeFacilities = safeArray(facilities);
+  const trimmedMessage = String(message).trim();
+
+  if (!trimmedMessage) {
+    return res.status(400).json({ message: "Message is required." });
+  }
+
+  prepareSse(res);
+
+  const guardrail = evaluateChatGuardrail(trimmedMessage);
+  if (guardrail.blocked) {
+    return streamStaticChatPayload(res, guardrailChatResponse(guardrail, safeFacilities));
+  }
+
+  if (!openai) {
+    return streamStaticChatPayload(res, fallbackChatResponse(trimmedMessage, safeFacilities));
+  }
+
+  let reply = "";
+  let clientClosed = false;
+  const timeoutSignal = createTimeoutSignal(openaiStreamTimeoutMs);
+  res.on("close", () => {
+    if (!res.writableEnded) {
+      clientClosed = true;
+      timeoutSignal.abort();
+    }
+  });
+
+  try {
+    const stream = await openai.responses.create(
+      {
+        model: openaiModel,
+        reasoning: { effort: openaiReasoningEffort },
+        instructions: shiftlinkStreamingInstructions,
+        stream: true,
+        input: [
+          {
+            role: "user",
+            content: JSON.stringify({
+              doctorProfile: profile,
+              selectedFacility,
+              facilities: safeFacilities.map((facility) => ({
+                id: facility.id,
+                name: facility.name,
+                type: facility.type,
+                city: facility.city,
+                state: facility.state,
+                tier: facility.tier,
+                score: facility.score,
+                match: facility.match,
+                evidence: facility.evidence,
+                flags: facility.flags
+              })),
+              schedule,
+              requests,
+              conversation: safeArray(messages).slice(-8),
+              dataAccess: getDataAccess(safeFacilities),
+              guardrailScope:
+                "Allowed only for Shiftlink hospital search, map logistics, profile context, outreach, and scheduling.",
+              userMessage: trimmedMessage
+            })
+          }
+        ],
+        text: { verbosity: "low" }
+      },
+      {
+        maxRetries: 0,
+        signal: timeoutSignal.signal,
+        timeout: openaiStreamTimeoutMs
+      }
+    );
+
+    const iterator = stream[Symbol.asyncIterator]();
+    while (!clientClosed) {
+      const { value: event, done } = await nextStreamEvent(iterator, openaiStreamTimeoutMs);
+      if (done) break;
+      if (clientClosed) return;
+      if (event.type === "response.output_text.delta" && typeof event.delta === "string") {
+        reply += event.delta;
+        writeSse(res, "delta", { delta: event.delta });
+      }
+      if (event.type === "error") {
+        throw new Error(event.message || "OpenAI streaming failed");
+      }
+    }
+
+    const metadata = inferChatMetadata(trimmedMessage, reply, safeFacilities);
+    const payload = normalizeChatPayload(
+      {
+        reply,
+        ...metadata
+      },
+      "openai_stream",
+      getDataAccess(safeFacilities)
+    );
+    writeSse(res, "done", payload);
+    res.end();
+  } catch (error) {
+    console.error("OpenAI chat stream failed", error);
+    timeoutSignal.abort();
+    if (!clientClosed) {
+      await streamStaticChatPayload(res, fallbackChatResponse(trimmedMessage, safeFacilities));
+    }
+  } finally {
+    timeoutSignal.cancel();
   }
 });
 
