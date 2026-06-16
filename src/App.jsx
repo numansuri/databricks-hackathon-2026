@@ -33,6 +33,15 @@ import {
   X
 } from "lucide-react";
 import seedFacilities from "../public/gold/facilities_seed.json";
+import { CANONICAL_SPECIALTIES, labelFor, resolveSpecialty } from "./specialties.js";
+import {
+  recommendationFor,
+  applyStateFilter,
+  facilitiesForDistrict,
+  districtContext,
+  signalFor,
+  bundledStates
+} from "./recommendation.js";
 
 const APP_NAME = "Shiftlink";
 const APP_MARK = "SL";
@@ -108,13 +117,62 @@ function getDisplayName(user) {
   return user.name || user.email?.split("@")[0] || "User";
 }
 
-function createDoctorProfile(userId, rawText) {
+// V2 doctor profile (onboarding §5): the canonical specialty is the only required
+// field and the only gold join key. `tags` is kept mirrored for P0 back-compat
+// (integration-spec §7.4) so existing readers keep working.
+function createDoctorProfileV2(userId, resolution, extras = {}) {
+  const canonical = resolution.canonical;
+  const label = resolution.label || labelFor(canonical);
+  const now = new Date().toISOString();
+  const preferredStatesNorm = extras.preferredStatesNorm || [];
   return {
+    schemaVersion: 2,
     doctorId: userId,
-    rawText,
-    tags: extractLocalTags(rawText),
-    createdAt: new Date().toISOString()
+    createdAt: extras.createdAt || now,
+    updatedAt: now,
+    primarySpecialtyCanonical: canonical,
+    primarySpecialtyLabel: label,
+    specialtyResolution: {
+      input: "",
+      status: "matched",
+      method: resolution.method || "select",
+      source: resolution.source || "picker",
+      confidence: resolution.confidence ?? 1,
+      ...(resolution.matchedAlias ? { matchedAlias: resolution.matchedAlias } : {})
+    },
+    geography: { preferredStatesNorm, allowNationalFallback: true },
+    preferences: {
+      facilityComplexityTiers: [],
+      ownershipSectorFinal: [],
+      publicHealthOnly: false,
+      requireSpecialistEvidence: false,
+      teleconsultOnly: false,
+      intent: "volunteer"
+    },
+    verification: { status: "unverified" },
+    tags: { specialties: [canonical], regions: preferredStatesNorm, experience: "" }
   };
+}
+
+// Lift a stored V1 profile into V2 by re-resolving its first specialty tag through
+// the shared alias map (onboarding §5). Best-effort for old demo data; an
+// unresolvable tag falls back to internal_medicine (a demand-bearing specialty) so
+// the migrated profile still carries a valid join key.
+function migrateV1Profile(v1) {
+  if (!v1 || v1.schemaVersion === 2) return v1;
+  const raw = v1.tags?.specialties?.[0] || v1.rawText || "";
+  const res = resolveSpecialty(raw);
+  let canonical = null;
+  if ((res.status === "matched" || res.status === "confirm" || res.status === "ambiguous") && res.candidates.length) {
+    canonical = res.candidates[0];
+  }
+  if (!canonical) canonical = "internal_medicine";
+  const regions = Array.isArray(v1.tags?.regions) ? v1.tags.regions : [];
+  return createDoctorProfileV2(
+    v1.doctorId,
+    { canonical, label: labelFor(canonical), method: "legacy_alias", source: "picker", confidence: 0.5 },
+    { preferredStatesNorm: regions, createdAt: v1.createdAt }
+  );
 }
 
 function useProfileRecorder(setText) {
@@ -202,13 +260,12 @@ function App() {
 
   // Shiftlink is doctor-only (integration-spec D2: the hospital role + two-way
   // scheduling-request flow are cut). signUp always creates a volunteer specialist.
-  function signUp({ name, email, password, profileText }) {
+  function signUp({ name, email, password, specialty }) {
     const normalizedEmail = normalizeEmail(email);
     if (users.some((user) => user.email === normalizedEmail)) {
       return { ok: false, message: "An account already exists for that email." };
     }
     const userId = crypto.randomUUID();
-    const trimmedProfileText = profileText?.trim() || "";
     const user = {
       id: userId,
       name: name.trim(),
@@ -219,8 +276,8 @@ function App() {
       createdAt: new Date().toISOString()
     };
     persistUsers([...users, user]);
-    if (trimmedProfileText) {
-      saveJson(getProfileKey(user.id), createDoctorProfile(user.id, trimmedProfileText));
+    if (specialty?.canonical) {
+      saveJson(getProfileKey(user.id), createDoctorProfileV2(user.id, specialty, {}));
     }
     localStorage.setItem(SESSION_USER_KEY, user.id);
     setSessionUserId(user.id);
@@ -263,7 +320,14 @@ function DoctorApp({ user, onLogout, theme, onToggleTheme }) {
   const scheduleKey = getScheduleKey(user.id);
   const [profile, setProfile] = useState(() => {
     const saved = localStorage.getItem(profileKey);
-    return saved ? JSON.parse(saved) : null;
+    if (!saved) return null;
+    const parsed = JSON.parse(saved);
+    if (parsed && parsed.schemaVersion !== 2) {
+      const migrated = migrateV1Profile(parsed);
+      saveJson(profileKey, migrated);
+      return migrated;
+    }
+    return parsed;
   });
   const [activeView, setActiveView] = useState("search");
   // ONE deduped-by-id facilities state, seeded from the bundled recommender slice
@@ -303,8 +367,8 @@ function DoctorApp({ user, onLogout, theme, onToggleTheme }) {
     });
   }
 
-  function saveProfile(rawText) {
-    const nextProfile = createDoctorProfile(user.id, rawText);
+  function saveProfile(resolution) {
+    const nextProfile = createDoctorProfileV2(user.id, resolution, {});
     saveJson(profileKey, nextProfile);
     setProfile(nextProfile);
   }
@@ -548,20 +612,160 @@ function DoctorApp({ user, onLogout, theme, onToggleTheme }) {
   );
 }
 
+const SIGNAL_BADGE = {
+  high: { label: "High-need districts", className: "signalHigh" },
+  best_available: { label: "Need signal (best-available)", className: "signalMid" },
+  none: { label: "No need-gap signal", className: "signalNone" }
+};
+
+// Onboarding front door (onboarding §2/§4): a searchable combobox over all 110
+// canonical specialties, each with an honest signal badge. Direct selection always
+// works; typed/spoken text routes through the SAME alias resolver (confirm chip /
+// disambiguation / honest block) and is NEVER silently coerced to a canonical.
+// Calls onResolved({canonical,label,method,matchedAlias,source,confidence}).
+function SpecialtyPicker({ onResolved, selectedCanonical }) {
+  const [query, setQuery] = useState("");
+  const [pending, setPending] = useState(null);
+  const [showText, setShowText] = useState(false);
+  const [freeText, setFreeText] = useState("");
+  const { recording, status, error, startRecording, stopRecording } = useProfileRecorder(setFreeText);
+
+  const options = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const qUnderscore = q.replace(/[\s/&-]+/g, "_");
+    const rank = { high: 0, best_available: 1, none: 2 };
+    return CANONICAL_SPECIALTIES.map((c) => ({ canonical: c, label: labelFor(c), signal: signalFor(c) }))
+      .filter((o) => !q || o.label.toLowerCase().includes(q) || o.canonical.includes(qUnderscore))
+      .sort((a, b) => rank[a.signal] - rank[b.signal] || a.label.localeCompare(b.label))
+      .slice(0, 40);
+  }, [query]);
+
+  function choose(canonical, method = "select", matchedAlias) {
+    setPending(null);
+    setQuery(labelFor(canonical));
+    onResolved({
+      canonical,
+      label: labelFor(canonical),
+      method,
+      matchedAlias,
+      source: "picker",
+      confidence: method === "select" ? 1 : 0.9
+    });
+  }
+
+  function resolveText(text) {
+    const res = resolveSpecialty(text);
+    if (res.status === "matched") choose(res.candidates[0], "select");
+    else if (res.status === "confirm") setPending({ status: "confirm", candidates: res.candidates, matchedAlias: res.matchedAlias });
+    else if (res.status === "ambiguous") setPending({ status: "ambiguous", candidates: res.candidates });
+    else setPending({ status: "blocked" });
+  }
+
+  return (
+    <div className="specialtyPicker">
+      <label className="pickerLabel">
+        Your specialty
+        <input
+          type="text"
+          value={query}
+          onChange={(event) => {
+            setQuery(event.target.value);
+            setPending(null);
+          }}
+          placeholder="Search 110 specialties (e.g. Pediatrics)"
+          aria-label="Search specialties"
+        />
+      </label>
+      {selectedCanonical ? (
+        <p className="pickerSelected">
+          <Check size={14} /> {labelFor(selectedCanonical)}
+        </p>
+      ) : null}
+      <div className="pickerOptions" role="listbox">
+        {options.map((option) => (
+          <button
+            type="button"
+            key={option.canonical}
+            className={`pickerOption ${selectedCanonical === option.canonical ? "active" : ""}`}
+            onClick={() => choose(option.canonical, "select")}
+          >
+            <span>{option.label}</span>
+            <span className={`signalBadge ${SIGNAL_BADGE[option.signal].className}`}>
+              {SIGNAL_BADGE[option.signal].label}
+            </span>
+          </button>
+        ))}
+        {!options.length ? <p className="pickerEmpty">No match — try a different term or browse the list.</p> : null}
+      </div>
+
+      {pending?.status === "confirm" ? (
+        <div className="pickerConfirm">
+          <span>
+            We read that as <strong>{labelFor(pending.candidates[0])}</strong> — correct?
+          </span>
+          <button type="button" className="primaryButton" onClick={() => choose(pending.candidates[0], "alias", pending.matchedAlias)}>
+            Yes
+          </button>
+          <button type="button" className="ghostButton" onClick={() => setPending(null)}>
+            No
+          </button>
+        </div>
+      ) : null}
+      {pending?.status === "ambiguous" ? (
+        <div className="pickerConfirm">
+          <span>Which one?</span>
+          <div className="pickerOptions">
+            {pending.candidates.map((candidate) => (
+              <button type="button" key={candidate} className="pickerOption" onClick={() => choose(candidate, "alias")}>
+                {labelFor(candidate)}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      {pending?.status === "blocked" ? (
+        <p className="pickerEmpty">Couldn't read a specialty — pick one from the list above.</p>
+      ) : null}
+
+      <button type="button" className="ghostButton pickerExpand" onClick={() => setShowText((value) => !value)}>
+        <Mic size={15} /> Type or speak instead
+      </button>
+      {showText ? (
+        <div className="textareaFrame">
+          <textarea
+            value={freeText}
+            onChange={(event) => setFreeText(event.target.value)}
+            placeholder="Describe your specialty in your words. Do not enter patient-identifying information."
+            aria-label="Describe your specialty"
+          />
+          <div className="transcriptionDock">
+            <button
+              type="button"
+              className={`iconTextButton ${recording ? "dangerButton" : ""}`}
+              onClick={recording ? stopRecording : startRecording}
+            >
+              {recording ? <Square size={17} /> : <Mic size={17} />}
+              {recording ? "Stop" : "Speak"}
+            </button>
+            <StatusPill status={status} />
+            <button type="button" className="iconTextButton" onClick={() => resolveText(freeText)}>
+              <Check size={16} /> Resolve
+            </button>
+          </div>
+          {error ? <p className="formError">{error}</p> : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function AuthGate({ onLogin, onSignUp, theme, onToggleTheme }) {
   const [mode, setMode] = useState("signup");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [profileText, setProfileText] = useState("");
+  const [specialty, setSpecialty] = useState(null);
   const [error, setError] = useState("");
-  const {
-    recording: profileRecording,
-    status: profileStatus,
-    error: profileError,
-    startRecording: startProfileRecording,
-    stopRecording: stopProfileRecording
-  } = useProfileRecorder(setProfileText);
 
   function submit(event) {
     event.preventDefault();
@@ -569,13 +773,14 @@ function AuthGate({ onLogin, onSignUp, theme, onToggleTheme }) {
     const result =
       mode === "login"
         ? onLogin({ email, password })
-        : onSignUp({ name, email, password, profileText });
+        : onSignUp({ name, email, password, specialty });
     if (!result.ok) {
       setError(result.message);
     }
   }
 
-  const doctorProfileReady = profileText.trim().length > 20;
+  // Doctor-ready gate (onboarding §2): the canonical specialty is the only required field.
+  const doctorProfileReady = !!specialty?.canonical;
   const canSubmit =
     mode === "login"
       ? email.trim() && password
@@ -653,33 +858,10 @@ function AuthGate({ onLogin, onSignUp, theme, onToggleTheme }) {
           {mode === "signup" && (
             <div className="doctorContextInline">
               <div className="contextLabelRow">
-                <span>Your specialty &amp; context</span>
+                <span>Your specialty</span>
                 <span>{doctorProfileReady ? "Ready" : "Required"}</span>
               </div>
-              <div className="textareaFrame">
-                <textarea
-                  aria-label="Doctor context"
-                  value={profileText}
-                  onChange={(event) => setProfileText(event.target.value)}
-                  placeholder="I am a pediatrician who can volunteer monthly for rural screening camps. Do not enter patient-identifying information."
-                />
-                <div className="transcriptionDock">
-                  <button
-                    type="button"
-                    className={`iconTextButton ${profileRecording ? "dangerButton" : ""}`}
-                    onClick={profileRecording ? stopProfileRecording : startProfileRecording}
-                  >
-                    {profileRecording ? <Square size={17} /> : <Mic size={17} />}
-                    {profileRecording ? "Stop" : "Speak"}
-                  </button>
-                  <StatusPill status={profileStatus} />
-                </div>
-              </div>
-              {profileError && <p className="formError">{profileError}</p>}
-              <button type="button" className="ghostButton sampleContextButton" onClick={() => setProfileText(SAMPLE_PROFILE_TEXT)}>
-                <FileText size={16} />
-                Use sample context
-              </button>
+              <SpecialtyPicker onResolved={setSpecialty} selectedCanonical={specialty?.canonical} />
             </div>
           )}
           {error && <p className="formError">{error}</p>}
@@ -697,21 +879,17 @@ function AuthGate({ onLogin, onSignUp, theme, onToggleTheme }) {
 }
 
 function Onboarding({ onComplete, theme, onToggleTheme }) {
-  const [text, setText] = useState("");
-  const { recording, status, error, startRecording, stopRecording } = useProfileRecorder(setText);
-
-  const canSubmit = text.trim().length > 20;
+  const [specialty, setSpecialty] = useState(null);
+  const canSubmit = !!specialty?.canonical;
 
   return (
     <main className="onboarding">
       <section className="onboardingPanel">
         <div className="brandLockup setupBrand">
-          <span className="brandMark">
-            {APP_MARK}
-          </span>
+          <span className="brandMark">{APP_MARK}</span>
           <div>
             <h1>{APP_NAME}</h1>
-            <p>Doctor context setup</p>
+            <p>Pick your specialty</p>
           </div>
           <ThemeToggle theme={theme} onToggleTheme={onToggleTheme} />
         </div>
@@ -719,71 +897,38 @@ function Onboarding({ onComplete, theme, onToggleTheme }) {
           <div className="onboardingPrompt">
             <div className="eyebrow">
               <Sparkles size={16} />
-              Profile setup
+              One field
             </div>
-            <h2>Start with the context that should shape every referral.</h2>
+            <h2>Where can your specialty do the most good?</h2>
             <p>
-              Add specialties, years of experience, languages, preferred regions, and volunteering interests.
-              You can update, add, or remove this context later by telling the chatbot.
+              Pick your specialty from the list. Shiftlink ranks the districts with the highest
+              unmet need for it and names real candidate host clinics. Geography is optional —
+              national ranking is a valid first answer.
             </p>
             <div className="setupNotes">
               <div>
                 <Check size={16} />
-                Used to rank facilities and draft outreach.
+                One required field, about twenty seconds.
               </div>
               <div>
-                <Mic size={16} />
-                Speak first, then edit the transcript before saving.
+                <ShieldCheck size={16} />
+                You are self-reported and unverified.
               </div>
               <div>
                 <X size={16} />
-                Remove stale preferences anytime in chat.
+                Do not enter patient-identifying information.
               </div>
-            </div>
-            <div className="profileExamples">
-              <span>Cardiology</span>
-              <span>Critical care</span>
-              <span>Rural camps</span>
-              <span>Gujarat</span>
             </div>
           </div>
           <form
             className="profileForm"
             onSubmit={(event) => {
               event.preventDefault();
-              if (canSubmit) onComplete(text.trim());
+              if (canSubmit) onComplete(specialty);
             }}
           >
-            <div className="textareaFrame">
-              <textarea
-                value={text}
-                onChange={(event) => setText(event.target.value)}
-                placeholder="I am a cardiologist with ICU experience. I usually refer patients for cardiac emergencies, prefer Gujarat and Rajasthan, and can volunteer for rural screening camps..."
-              />
-              <div className="transcriptionDock">
-                <button
-                  type="button"
-                  className={`iconTextButton ${recording ? "dangerButton" : ""}`}
-                  onClick={recording ? stopRecording : startRecording}
-                >
-                  {recording ? <Square size={17} /> : <Mic size={17} />}
-                  {recording ? "Stop" : "Speak"}
-                </button>
-                <StatusPill status={status} />
-              </div>
-            </div>
-            {error && <p className="formError">{error}</p>}
+            <SpecialtyPicker onResolved={setSpecialty} selectedCanonical={specialty?.canonical} />
             <div className="formActions">
-              <button
-                type="button"
-                className="ghostButton"
-                onClick={() =>
-                  setText(SAMPLE_PROFILE_TEXT)
-                }
-              >
-                <FileText size={17} />
-                Use sample
-              </button>
               <button type="submit" className="primaryButton" disabled={!canSubmit}>
                 Continue
                 <ChevronRight size={18} />
@@ -867,7 +1012,7 @@ function TopBar({
         <ThemeToggle theme={theme} onToggleTheme={onToggleTheme} />
         <div className="profileChip">
           <UserRound size={17} />
-          <span>{getDisplayName(user)} · {profile.tags.specialties[0] || "Doctor"}</span>
+          <span>{getDisplayName(user)} · {profile?.primarySpecialtyLabel || profile?.tags?.specialties?.[0] || "Doctor"}</span>
           <button title="Reset profile" onClick={onResetProfile}>
             <X size={14} />
           </button>
@@ -897,6 +1042,88 @@ function LeftPanel(props) {
 // Recommend tab (interim list; the Recommend-tab feature work layers the impact-
 // ranked district cards on top). The faked "coverage assistant" chat is cut
 // (integration-spec §2) — the deterministic recommender list IS the answer.
+// One impact-ranked district from the pre-ranked slice. Expanding reveals real
+// host clinics (and merges them into facilities state). Greenfield districts show
+// an honest "no credible host yet" line and are never an outreach/schedule target.
+function DistrictCard({
+  district,
+  expanded,
+  onToggle,
+  selectedFacilityId,
+  setSelectedFacilityId,
+  shortlist,
+  toggleShortlist,
+  createOutreachDraft
+}) {
+  const tier = district.priority_tier;
+  const ctx = districtContext(district.districtKey);
+  const hosts = expanded ? facilitiesForDistrict(district.districtKey) : [];
+  return (
+    <article className={`districtCard ${expanded ? "expanded" : ""}`}>
+      <button type="button" className="districtHead" onClick={onToggle}>
+        <div>
+          <h3>
+            {district.district_name_norm}, {district.state_ut_norm}
+          </h3>
+          <div className="districtBadges">
+            <span className={`tierBadge tier-${tier}`}>{tier}</span>
+            {district.specialty_absent ? (
+              <span className="absentBadge">No specialist of your kind here today</span>
+            ) : null}
+            {district.is_thin_specialty ? (
+              <span className="thinBadge">candidate district (limited data)</span>
+            ) : null}
+          </div>
+        </div>
+        <div className="impactScore">
+          <strong>{district.impact_index}</strong>
+          <span>/100</span>
+        </div>
+      </button>
+      {district.driving_needs?.length ? (
+        <p className="drivingNeeds">
+          <strong>Why:</strong> {district.driving_needs.map(humanizeTag).join(", ")}
+        </p>
+      ) : null}
+      {ctx ? (
+        <div className="districtContext">
+          {ctx.personaLabel ? <span className="personaTag">{humanizeTag(ctx.personaLabel)}</span> : null}
+          {ctx.topPrioritySpecialties?.length ? (
+            <p className="otherPriority">
+              Other priority specialties here: {ctx.topPrioritySpecialties.slice(0, 4).map(labelFor).join(", ")}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+      {expanded ? (
+        <div className="hostList">
+          {hosts.length ? (
+            hosts.map((facility) => (
+              <FacilityCard
+                key={facility.id}
+                facility={facility}
+                selected={facility.id === selectedFacilityId}
+                shortlisted={shortlist.includes(facility.id)}
+                onSelect={() => setSelectedFacilityId(facility.id)}
+                onToggleShortlist={() => toggleShortlist(facility.id)}
+                onSchedule={() => createOutreachDraft(facility.id)}
+              />
+            ))
+          ) : (
+            <p className="greenfield">
+              No credible host clinic in the data here yet — not an outreach or schedule target.
+            </p>
+          )}
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
+// Recommend tab (onboarding §3): impact-ranked districts for the doctor's specialty,
+// read straight from the pre-ranked slice (ZERO app-side ranking). Expanding a
+// district reveals real host clinics and MERGES them into the facilities state so
+// outreach/scheduler can resolve them by id.
 function SearchPanel({
   facilities,
   selectedFacilityId,
@@ -904,33 +1131,115 @@ function SearchPanel({
   shortlist,
   toggleShortlist,
   createOutreachDraft,
+  mergeFacilities,
   profile
 }) {
-  const specialtyLabel =
-    profile?.primarySpecialtyLabel || profile?.tags?.specialties?.[0] || "your specialty";
+  const canonical = profile?.primarySpecialtyCanonical || "";
+  const label = profile?.primarySpecialtyLabel || (canonical ? labelFor(canonical) : "your specialty");
+  const result = useMemo(() => recommendationFor(canonical), [canonical]);
+  const signal = signalFor(canonical);
+  const [stateFilter, setStateFilter] = useState([]);
+  const [expanded, setExpanded] = useState(null);
+
+  const districts = useMemo(
+    () => applyStateFilter(result.districts, stateFilter).slice(0, 10),
+    [result, stateFilter]
+  );
+  const stateNarrowedToNational =
+    stateFilter.length > 0 &&
+    result.districts.length > 0 &&
+    !result.districts.some((d) => stateFilter.includes(d.state_ut_norm));
+
+  function toggleExpand(districtKey) {
+    setExpanded((current) => (current === districtKey ? null : districtKey));
+    const hosts = facilitiesForDistrict(districtKey);
+    if (hosts.length) mergeFacilities(hosts);
+  }
+
+  if (result.status === "no_gap_signal") {
+    return (
+      <aside className="sidePanel">
+        <div className="panelHeader">
+          <div>
+            <p className="eyebrow">Recommend</p>
+            <h2>{label}</h2>
+          </div>
+        </div>
+        <div className="emptyState">
+          <AlertCircle size={18} />
+          <h3>No NFHS need-gap signal for {label}</h3>
+          <p>
+            This specialty has no measured health-need gap, so no district ranking can be made from
+            health-need gaps. You can still browse host clinics below.
+          </p>
+        </div>
+        <div className="resultStack">
+          {facilities.map((facility) => (
+            <FacilityCard
+              key={facility.id}
+              facility={facility}
+              selected={facility.id === selectedFacilityId}
+              shortlisted={shortlist.includes(facility.id)}
+              onSelect={() => setSelectedFacilityId(facility.id)}
+              onToggleShortlist={() => toggleShortlist(facility.id)}
+              onSchedule={() => createOutreachDraft(facility.id)}
+            />
+          ))}
+        </div>
+      </aside>
+    );
+  }
+
   return (
     <aside className="sidePanel">
       <div className="panelHeader">
         <div>
           <p className="eyebrow">Recommend</p>
-          <h2>Host clinics for {specialtyLabel}</h2>
+          <h2>Highest-need districts for {label}</h2>
         </div>
-        <span className="countBadge">{facilities.length}</span>
+        <span className="countBadge">{districts.length}</span>
       </div>
-      <p className="panelHint">
-        Real candidate host clinics where you can volunteer. Pick one to draft a warm,
-        channel-aware outreach message.
-      </p>
+      {signal === "best_available" ? (
+        <p className="panelHint">
+          No high-need districts are measured for this specialty today — here are the best-available
+          districts by population-weighted need.
+        </p>
+      ) : null}
+      <div className="stateChips">
+        <span className="chipLabel">Add my state:</span>
+        {bundledStates.map((state) => (
+          <button
+            type="button"
+            key={state}
+            className={`chip ${stateFilter.includes(state) ? "active" : ""}`}
+            onClick={() =>
+              setStateFilter((current) =>
+                current.includes(state) ? current.filter((s) => s !== state) : [...current, state]
+              )
+            }
+          >
+            {state}
+          </button>
+        ))}
+      </div>
+      {stateNarrowedToNational ? (
+        <p className="panelHint">
+          Your state isn't among the top-need districts for this specialty in the offline preview —
+          showing national high-need districts. Precise state-level ranking arrives with live data.
+        </p>
+      ) : null}
       <div className="resultStack">
-        {facilities.map((facility) => (
-          <FacilityCard
-            key={facility.id}
-            facility={facility}
-            selected={facility.id === selectedFacilityId}
-            shortlisted={shortlist.includes(facility.id)}
-            onSelect={() => setSelectedFacilityId(facility.id)}
-            onToggleShortlist={() => toggleShortlist(facility.id)}
-            onSchedule={() => createOutreachDraft(facility.id)}
+        {districts.map((district) => (
+          <DistrictCard
+            key={district.districtKey}
+            district={district}
+            expanded={expanded === district.districtKey}
+            onToggle={() => toggleExpand(district.districtKey)}
+            selectedFacilityId={selectedFacilityId}
+            setSelectedFacilityId={setSelectedFacilityId}
+            shortlist={shortlist}
+            toggleShortlist={toggleShortlist}
+            createOutreachDraft={createOutreachDraft}
           />
         ))}
       </div>
@@ -1478,7 +1787,7 @@ function ShortlistPanel({
   selectedFacilityId,
   setSelectedFacilityId,
   toggleShortlist,
-  addSchedule
+  createOutreachDraft
 }) {
   const savedFacilities = facilities.filter((facility) => shortlist.includes(facility.id));
 
@@ -1501,14 +1810,7 @@ function ShortlistPanel({
               shortlisted
               onSelect={() => setSelectedFacilityId(facility.id)}
               onToggleShortlist={() => toggleShortlist(facility.id)}
-              onSchedule={() =>
-                addSchedule({
-                  facilityId: facility.id,
-                  date: "2026-06-19",
-                  time: "12:00",
-                  purpose: "Shortlist follow-up"
-                })
-              }
+              onSchedule={() => createOutreachDraft(facility.id)}
             />
           ))
         ) : (
@@ -1521,27 +1823,6 @@ function ShortlistPanel({
       </div>
     </aside>
   );
-}
-
-function extractLocalTags(rawText) {
-  const specialties = [
-    ["cardiology", /cardio|heart|hypertension/i],
-    ["critical care", /icu|critical|emergency/i],
-    ["diabetes", /diabetes|endocr/i],
-    ["general medicine", /general|physician|medicine/i]
-  ]
-    .filter(([, pattern]) => pattern.test(rawText))
-    .map(([label]) => label);
-
-  const regions = ["Gujarat", "Rajasthan", "Maharashtra", "rural"].filter((region) =>
-    new RegExp(region, "i").test(rawText)
-  );
-
-  return {
-    specialties: specialties.length ? specialties : ["general medicine"],
-    regions,
-    experience: rawText.match(/(\d+)\s*(years|yrs)/i)?.[1] || ""
-  };
 }
 
 function mapFacilityForApi(facility) {
@@ -1563,8 +1844,12 @@ function mapFacilityForApi(facility) {
 function buildDoctorForApi(user, profile) {
   return {
     name: getDisplayName(user),
-    specialties: profile?.tags?.specialties || [],
-    regions: profile?.tags?.regions || [],
+    specialties: profile?.primarySpecialtyCanonical
+      ? [profile.primarySpecialtyCanonical]
+      : profile?.tags?.specialties || [],
+    regions: profile?.geography?.preferredStatesNorm?.length
+      ? profile.geography.preferredStatesNorm
+      : profile?.tags?.regions || [],
     experienceYears: profile?.tags?.experience || null
   };
 }
@@ -1643,6 +1928,15 @@ function humanizeSpecialtyLabel(token) {
     .replace(/\s+/g, " ")
     .trim()
     .toLowerCase();
+}
+
+// snake_case gold tag (driving_needs / top_need_categories / persona_label) -> Title Case.
+function humanizeTag(token) {
+  return String(token || "")
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (ch) => ch.toUpperCase());
 }
 
 function ensureUrlClient(url) {
