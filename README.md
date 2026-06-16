@@ -6,7 +6,7 @@ Shiftlink is a role-based hospital exchange for referral and volunteering workfl
 
 ## Current Status
 
-This repository currently contains a working React/Vite frontend prototype.
+This repository currently contains a working React/Vite prototype with a small Node/Express server for OpenAI-backed API routes.
 
 Implemented:
 
@@ -16,14 +16,19 @@ Implemented:
 - Hospital sign-up fields for hospital name, street address, phone number, and optional Facebook page.
 - Text entry for specialties, experience, preferred regions, and volunteering interests.
 - Browser audio capture with `MediaRecorder`.
-- Speech-to-text handoff to `POST /api/transcribe` when a backend exists.
+- Speech-to-text handoff to `POST /api/transcribe`.
+- OpenAI transcription through the server-side `OPENAI_API_KEY`.
 - Demo transcript fallback when `/api/transcribe` is not available.
 - Local doctor profile persistence in `localStorage`.
 - Doctor app shell with Search, Schedule, and Shortlist tabs.
-- Chat-style left panel with context-update guidance.
+- Chat-style left panel connected to `POST /api/chat`.
+- OpenAI `gpt-5.5` chatbot responses with medium reasoning by default.
+- Structured chatbot output for assistant reply text, map queries, facility IDs, quick prompts, and proposed profile add/remove changes.
 - Google Maps JavaScript API integration when `VITE_GOOGLE_MAPS_API_KEY` is set.
 - Google Maps fallback map when no API key is configured.
 - Pseudo facility markers using Google Maps Advanced Markers.
+- Google Places hospital search from the map toolbar.
+- Chat-to-map handoff when the assistant returns a `mapQuery`.
 - Facility cards, evidence drawer, contact links, trust tiers, shortlist actions, and schedule builder.
 - Hospital exchange view for facility-specific scheduling request review.
 - Hospital approve and deny actions for pending doctor-to-hospital requests.
@@ -37,11 +42,11 @@ Implemented:
 
 Not implemented yet:
 
-- FastAPI backend.
 - Live Databricks SQL queries from the frontend.
 - Persistent backend tables for users, doctor profiles, shortlists, schedules, or two-way scheduling decisions.
-- Real OpenAI Whisper transcription endpoint.
-- LLM-powered query parsing, evidence scoring, or email generation.
+- Persistent chat history beyond the browser session.
+- Automatic persistence of chatbot-proposed profile context changes.
+- LLM-powered evidence scoring or email generation.
 - Production authentication, authorization, password hashing, or session management.
 - Patient records or PHI handling.
 
@@ -123,9 +128,11 @@ The Search tab has:
 - a search input
 - ranked pseudo facility cards
 - a Google map or fallback map
+- a map search field for cities, districts, and hospital locations
+- Google Places search results shown as a separate live-results layer when the Maps key supports Places
 - an evidence drawer for the selected facility
 
-The chatbot currently has static behavior. It does not call an LLM yet.
+The chatbot calls the local server at `POST /api/chat`. The server uses `OPENAI_API_KEY`, `OPENAI_MODEL` (default `gpt-5.5`), and `OPENAI_REASONING_EFFORT` (default `medium`). If the OpenAI key is missing or the request fails, the endpoint returns a local fallback response so the UI remains usable.
 
 ### Shortlist
 
@@ -159,8 +166,11 @@ Hospital decisions and doctor decisions are stored in `referralCopilotScheduleRe
 
 - React 19
 - Vite 8
+- Node/Express API server
+- OpenAI SDK
 - lucide-react icons
 - Google Maps JavaScript API
+- Google Places Library for Maps JavaScript
 - Browser `MediaRecorder` API
 - Local browser storage for users, sessions, profiles, and requests in the current prototype
 
@@ -186,16 +196,25 @@ Add a Google Maps API key:
 VITE_GOOGLE_MAPS_API_KEY=your_google_maps_javascript_api_key
 ```
 
+Add a server-side OpenAI key:
+
+```bash
+OPENAI_API_KEY=your_openai_api_key
+OPENAI_MODEL=gpt-5.5
+OPENAI_REASONING_EFFORT=medium
+OPENAI_TRANSCRIBE_MODEL=gpt-4o-transcribe
+```
+
 Optional for production-style Maps configuration:
 
 ```bash
 VITE_GOOGLE_MAP_ID=your_google_maps_map_id
 ```
 
-Run the dev server:
+Run the integrated Vite and API dev server:
 
 ```bash
-npm run dev -- --port 5173
+npm run dev
 ```
 
 Open:
@@ -210,7 +229,7 @@ Build for production:
 npm run build
 ```
 
-Preview a production build:
+Preview a production build with Vite only:
 
 ```bash
 npm run preview
@@ -222,6 +241,8 @@ Run the production start command used by Databricks Apps:
 npm run start
 ```
 
+`npm run start` builds the Vite app and starts the Node server that serves `dist/` plus `/api/chat`, `/api/transcribe`, and `/api/health`.
+
 ## Databricks Apps Configuration
 
 `databricks.yml` defines a Databricks Apps bundle for the existing app resource:
@@ -231,6 +252,7 @@ npm run start
 - Workspace host: `https://dbc-87f85fc5-dc00.cloud.databricks.com`
 - Start command: `npm run start`
 - Google Maps secret reference: scope `referral-copilot`, key `google-maps-api-key`
+- OpenAI secret reference: scope `referral-copilot`, key `openai-api-key`
 
 The Databricks app resource name and URL still use the earlier `referral-copilot` deployment name, while the product UI shown to users is Shiftlink.
 
@@ -242,11 +264,14 @@ The app loads:
 
 - Maps JavaScript API
 - `marker` library
+- `places` library
 - Advanced Markers
+
+The map toolbar uses Google Places to search hospital locations near the doctor's query. The curated pseudo facility markers remain visible as the dataset layer, while Google Places search results render as a separate live-results layer.
 
 The code uses `VITE_GOOGLE_MAP_ID` when provided. If no map ID is provided, the app falls back to `DEMO_MAP_ID`, which is suitable for local prototype rendering but should be replaced for production.
 
-The `.env` file is ignored by git. Do not commit real API keys.
+The `.env` file is ignored by git. Do not commit real API keys. `VITE_GOOGLE_MAPS_API_KEY` is intentionally available to browser JavaScript because Google Maps JS keys are client-side keys. `OPENAI_API_KEY` must stay server-side and must not be prefixed with `VITE_`.
 
 ## Repository Layout
 
@@ -264,6 +289,7 @@ The `.env` file is ignored by git. Do not commit real API keys.
 |-- index.html
 |-- package.json
 |-- package-lock.json
+|-- server.mjs
 |-- src/
 |   |-- App.jsx
 |   |-- main.jsx
@@ -292,11 +318,14 @@ At the time this README was written:
 
 - `npm run build` completed successfully.
 - `npm audit --json` reported zero vulnerabilities.
+- `GET /api/health` confirmed the local server sees the OpenAI configuration.
+- `POST /api/chat` returned an OpenAI `gpt-5.5` structured response with a `mapQuery`.
+- The in-app browser verified a map toolbar search for `hospitals near Jaipur` returned 12 Google Places hospital markers.
+- The in-app browser verified a chatbot request for `hospitals near Udaipur` produced an assistant reply, updated the map query, and rendered 12 Google Places hospital markers.
 - A standalone Playwright smoke test confirmed doctor sign-up shows the context textarea and `Speak` control, blocks account creation until context exists, and saves the profile under the new doctor account.
 - A standalone Playwright smoke test confirmed hospital sign-up captures hospital name, street address, phone number, and optional Facebook page, removes the pseudo facility selector, and renders the saved hospital profile in the exchange view.
 - A standalone Playwright smoke test completed doctor signup, hospital signup, hospital-to-doctor request creation, doctor acceptance, and approved schedule insertion.
-- The local browser rendered the live Google Maps branch with three pseudo facility markers when a Maps API key was present.
-- The browser console had no warnings or errors after switching to async Maps loading and Advanced Markers.
+- The local browser rendered the live Google Maps branch with pseudo facility markers and Google Places result markers when a Maps API key was present.
 
 ## Security and Privacy Notes
 

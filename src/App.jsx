@@ -11,6 +11,7 @@ import {
   ExternalLink,
   FileText,
   Hospital,
+  LoaderCircle,
   LogOut,
   Mail,
   MapPin,
@@ -497,6 +498,7 @@ function DoctorApp({ user, requests, onCreateScheduleRequest, onUpdateRequestSta
     }
   ]));
   const [outreachRequests, setOutreachRequests] = useState(() => readJson(outreachKey, []));
+  const [mapSearchRequest, setMapSearchRequest] = useState({ query: "", nonce: 0 });
 
   const selectedFacility = facilities.find((facility) => facility.id === selectedFacilityId) || facilities[0];
   const doctorRequests = requests.filter((request) => request.doctorId === user.id);
@@ -673,6 +675,12 @@ function DoctorApp({ user, requests, onCreateScheduleRequest, onUpdateRequestSta
     updateSchedule((current) => current.filter((entry) => entry.id !== id));
   }
 
+  function requestMapSearch(query) {
+    const trimmedQuery = query.trim();
+    if (!trimmedQuery) return;
+    setMapSearchRequest((current) => ({ query: trimmedQuery, nonce: current.nonce + 1 }));
+  }
+
   if (!profile) {
     return <Onboarding onComplete={saveProfile} theme={theme} onToggleTheme={onToggleTheme} />;
   }
@@ -704,6 +712,7 @@ function DoctorApp({ user, requests, onCreateScheduleRequest, onUpdateRequestSta
           addSchedule={addSchedule}
           removeSchedule={removeSchedule}
           profile={profile}
+          selectedFacility={selectedFacility}
           requests={doctorRequests}
           incomingHospitalRequests={incomingHospitalRequests}
           onAcceptHospitalRequest={acceptHospitalRequest}
@@ -712,6 +721,7 @@ function DoctorApp({ user, requests, onCreateScheduleRequest, onUpdateRequestSta
           createOutreachDraft={createOutreachDraft}
           approveOutreach={approveOutreach}
           approveClinicTime={approveClinicTime}
+          onMapSearch={requestMapSearch}
         />
         <MapWorkspace
           activeView={activeView}
@@ -723,6 +733,7 @@ function DoctorApp({ user, requests, onCreateScheduleRequest, onUpdateRequestSta
           schedule={schedule}
           addSchedule={addSchedule}
           createOutreachDraft={createOutreachDraft}
+          mapSearchRequest={mapSearchRequest}
         />
       </main>
     </div>
@@ -1166,9 +1177,15 @@ function SearchPanel({
   shortlist,
   toggleShortlist,
   addSchedule,
-  profile
+  profile,
+  selectedFacility,
+  schedule = [],
+  requests = [],
+  onMapSearch
 }) {
   const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
   const [messages, setMessages] = useState([
     {
       role: "assistant",
@@ -1176,18 +1193,65 @@ function SearchPanel({
     }
   ]);
 
-  function submitSearch(query) {
+  async function submitSearch(query) {
     const nextQuery = query || input;
-    if (!nextQuery.trim()) return;
-    setMessages((current) => [
-      ...current,
-      { role: "user", text: nextQuery.trim() },
-      {
-        role: "assistant",
-        text: "I found three facilities with cardiac evidence near Ahmedabad. Strong matches include corroborated capability, procedure, and equipment fields."
-      }
-    ]);
+    const trimmedQuery = nextQuery.trim();
+    if (!trimmedQuery || loading) return;
+
+    const userMessage = { role: "user", text: trimmedQuery };
+    const conversation = [...messages, userMessage];
+    setMessages(conversation);
     setInput("");
+    setError("");
+    setLoading(true);
+
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: trimmedQuery,
+          messages: conversation,
+          profile,
+          facilities,
+          selectedFacility,
+          schedule,
+          requests
+        })
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || "Chat request failed");
+      }
+
+      const firstFacilityId = data.facilityIds?.find((id) => facilities.some((facility) => facility.id === id));
+      if (firstFacilityId) {
+        setSelectedFacilityId(firstFacilityId);
+      }
+      if (data.mapQuery) {
+        onMapSearch?.(data.mapQuery);
+      }
+
+      setMessages((current) => [
+        ...current,
+        {
+          role: "assistant",
+          text: data.reply || "I found relevant facilities and updated the map search."
+        }
+      ]);
+    } catch (chatError) {
+      setError(chatError.message || "The assistant could not respond.");
+      setMessages((current) => [
+        ...current,
+        {
+          role: "assistant",
+          text: "I could not reach the assistant just now. You can still search the map and schedule from the facility cards."
+        }
+      ]);
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -1201,7 +1265,7 @@ function SearchPanel({
       </div>
       <div className="quickPromptRow">
         {quickPrompts.map((prompt) => (
-          <button key={prompt} onClick={() => submitSearch(prompt)}>
+          <button key={prompt} onClick={() => submitSearch(prompt)} disabled={loading}>
             {prompt}
           </button>
         ))}
@@ -1212,7 +1276,14 @@ function SearchPanel({
             {message.text}
           </div>
         ))}
+        {loading && (
+          <div className="message assistant thinking">
+            <LoaderCircle size={15} />
+            Thinking through the exchange
+          </div>
+        )}
       </div>
+      {error && <p className="chatError">{error}</p>}
       <form
         className="chatInput"
         onSubmit={(event) => {
@@ -1223,10 +1294,11 @@ function SearchPanel({
         <input
           value={input}
           onChange={(event) => setInput(event.target.value)}
-          placeholder="Find requests worth accepting"
+          placeholder="Ask about facilities, profile context, or map search"
+          disabled={loading}
         />
-        <button title="Send search" type="submit">
-          <Send size={18} />
+        <button title="Send search" type="submit" disabled={loading}>
+          {loading ? <LoaderCircle size={18} /> : <Send size={18} />}
         </button>
       </form>
       <div className="resultStack">
@@ -1299,8 +1371,11 @@ function MapWorkspace({
   toggleShortlist,
   schedule,
   addSchedule,
-  createOutreachDraft
+  createOutreachDraft,
+  mapSearchRequest
 }) {
+  const [mapSearchInput, setMapSearchInput] = useState("Ahmedabad hospitals");
+  const [mapSearchQuery, setMapSearchQuery] = useState("");
   const visibleFacilities = useMemo(() => {
     if (activeView === "shortlist") {
       return facilities.filter((facility) => shortlist.includes(facility.id));
@@ -1311,12 +1386,26 @@ function MapWorkspace({
     return facilities;
   }, [activeView, facilities, schedule, shortlist]);
 
+  useEffect(() => {
+    if (!mapSearchRequest?.query) return;
+    setMapSearchInput(mapSearchRequest.query);
+    setMapSearchQuery(mapSearchRequest.query);
+  }, [mapSearchRequest]);
+
+  function submitMapSearch(event) {
+    event.preventDefault();
+    const trimmedQuery = mapSearchInput.trim();
+    if (!trimmedQuery) return;
+    setMapSearchQuery(trimmedQuery);
+  }
+
   return (
     <section className="mapWorkspace">
       <GoogleMapShell
         facilities={visibleFacilities.length ? visibleFacilities : facilities}
         selectedFacility={selectedFacility}
         onSelect={setSelectedFacilityId}
+        searchQuery={mapSearchQuery}
       />
       <div className="mapToolbar">
         <div>
@@ -1327,10 +1416,19 @@ function MapWorkspace({
               : "Hospital demand near Ahmedabad"}
           </h2>
         </div>
-        <button>
-          <Navigation size={17} />
-          Optimize
-        </button>
+        <form className="mapSearchForm" onSubmit={submitMapSearch}>
+          <Search size={17} />
+          <input
+            aria-label="Search hospital locations on map"
+            value={mapSearchInput}
+            onChange={(event) => setMapSearchInput(event.target.value)}
+            placeholder="Search a city, district, or hospital"
+          />
+          <button type="submit">
+            <Navigation size={17} />
+            Search
+          </button>
+        </form>
       </div>
       {activeView === "schedule" ? (
         <ScheduleRibbon schedule={schedule} facilities={facilities} />
@@ -1354,11 +1452,16 @@ function MapWorkspace({
   );
 }
 
-function GoogleMapShell({ facilities: visibleFacilities, selectedFacility, onSelect }) {
+function GoogleMapShell({ facilities: visibleFacilities, selectedFacility, onSelect, searchQuery }) {
   const mapRef = useRef(null);
   const instanceRef = useRef(null);
   const markerRef = useRef([]);
+  const placeMarkerRef = useRef([]);
   const infoWindowRef = useRef(null);
+  const [mapReady, setMapReady] = useState(false);
+  const [placeResults, setPlaceResults] = useState([]);
+  const [searchStatus, setSearchStatus] = useState("idle");
+  const [searchError, setSearchError] = useState("");
   const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
   const mapId = import.meta.env.VITE_GOOGLE_MAP_ID || "DEMO_MAP_ID";
 
@@ -1412,6 +1515,7 @@ function GoogleMapShell({ facilities: visibleFacilities, selectedFacility, onSel
         return marker;
       });
       map.panTo({ lat: selectedFacility.lat, lng: selectedFacility.lng });
+      setMapReady(true);
     });
 
     return () => {
@@ -1419,11 +1523,173 @@ function GoogleMapShell({ facilities: visibleFacilities, selectedFacility, onSel
     };
   }, [apiKey, mapId, onSelect, selectedFacility.lat, selectedFacility.lng, visibleFacilities]);
 
+  useEffect(() => {
+    const trimmedQuery = searchQuery?.trim();
+    if (!apiKey || !trimmedQuery || !mapReady || !instanceRef.current) return;
+    let cancelled = false;
+
+    async function runPlaceSearch() {
+      setSearchStatus("searching");
+      setSearchError("");
+
+      try {
+        await loadGoogleMaps(apiKey);
+        const map = instanceRef.current;
+        const { Place, SearchNearbyRankPreference } = await window.google.maps.importLibrary("places");
+        const baseCenter = { lat: selectedFacility.lat, lng: selectedFacility.lng };
+        const placeFields = [
+          "id",
+          "displayName",
+          "formattedAddress",
+          "location",
+          "googleMapsURI",
+          "rating",
+          "businessStatus",
+          "types"
+        ];
+        const locationResponse = await Place.searchByText({
+          textQuery: trimmedQuery,
+          fields: ["displayName", "formattedAddress", "location"],
+          maxResultCount: 1,
+          locationBias: { center: baseCenter, radius: 50000 }
+        });
+        const searchCenter = getPlaceLocationLiteral(locationResponse.places?.[0]?.location) || baseCenter;
+        let places = [];
+
+        try {
+          const nearbyResponse = await Place.searchNearby({
+            fields: placeFields,
+            locationRestriction: { center: searchCenter, radius: 50000 },
+            includedPrimaryTypes: ["hospital"],
+            maxResultCount: 12,
+            rankPreference: SearchNearbyRankPreference?.POPULARITY || "POPULARITY"
+          });
+          places = nearbyResponse.places || [];
+        } catch (nearbyError) {
+          console.warn("Nearby hospital search fell back to text search", nearbyError);
+        }
+
+        if (!places.length) {
+          const textResponse = await Place.searchByText({
+            textQuery: /hospital|clinic|medical/i.test(trimmedQuery)
+              ? trimmedQuery
+              : `hospitals near ${trimmedQuery}`,
+            fields: placeFields,
+            includedType: "hospital",
+            maxResultCount: 12,
+            locationBias: { center: searchCenter, radius: 50000 }
+          });
+          places = textResponse.places || [];
+        }
+
+        if (cancelled) return;
+
+        const normalizedPlaces = places
+          .map((place, index) => {
+            const location = getPlaceLocationLiteral(place.location);
+            if (!location) return null;
+            return {
+              id: place.id || `${trimmedQuery}-${index}`,
+              name: getPlaceDisplayName(place.displayName) || "Google hospital result",
+              address: place.formattedAddress || "",
+              location,
+              rating: place.rating || "",
+              businessStatus: place.businessStatus || "",
+              googleMapsURI: place.googleMapsURI || "",
+              types: place.types || []
+            };
+          })
+          .filter(Boolean);
+
+        placeMarkerRef.current.forEach(({ marker }) => {
+          marker.map = null;
+        });
+        placeMarkerRef.current = [];
+
+        if (!normalizedPlaces.length) {
+          setPlaceResults([]);
+          setSearchStatus("empty");
+          setSearchError(`No Google hospital locations found for "${trimmedQuery}".`);
+          map.panTo(searchCenter);
+          map.setZoom(11);
+          return;
+        }
+
+        const bounds = new window.google.maps.LatLngBounds();
+        normalizedPlaces.forEach((place) => bounds.extend(place.location));
+        visibleFacilities.forEach((facility) => bounds.extend({ lat: facility.lat, lng: facility.lng }));
+
+        placeMarkerRef.current = normalizedPlaces.map((place) => {
+          const marker = new window.google.maps.marker.AdvancedMarkerElement({
+            position: place.location,
+            map,
+            title: place.name,
+            content: makePlaceMarkerContent(),
+            zIndex: 30
+          });
+          marker.addEventListener("gmp-click", () => {
+            infoWindowRef.current.setContent(renderPlaceInfo(place));
+            infoWindowRef.current.open({ anchor: marker, map });
+          });
+          return { id: place.id, marker };
+        });
+
+        map.fitBounds(bounds, 82);
+        setPlaceResults(normalizedPlaces);
+        setSearchStatus("ready");
+      } catch (searchErrorValue) {
+        if (cancelled) return;
+        console.error("Google Places search failed", searchErrorValue);
+        setPlaceResults([]);
+        setSearchStatus("error");
+        setSearchError("Google Places search is unavailable. Check that Places API is enabled for this key.");
+      }
+    }
+
+    runPlaceSearch();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [apiKey, mapReady, searchQuery, selectedFacility.lat, selectedFacility.lng, visibleFacilities]);
+
+  function focusPlace(place) {
+    if (!instanceRef.current || !infoWindowRef.current) return;
+    const marker = placeMarkerRef.current.find((item) => item.id === place.id)?.marker;
+    instanceRef.current.panTo(place.location);
+    instanceRef.current.setZoom(14);
+    if (marker) {
+      infoWindowRef.current.setContent(renderPlaceInfo(place));
+      infoWindowRef.current.open({ anchor: marker, map: instanceRef.current });
+    }
+  }
+
   if (apiKey) {
     return (
       <>
         <div className="googleMap" ref={mapRef} />
-        <div className="mapProviderBadge">Google Maps · pseudo facility data</div>
+        <div className="mapProviderBadge">Google Maps · dataset layer + Places</div>
+        {(searchStatus !== "idle" || placeResults.length > 0) && (
+          <div className="placeResultsTray">
+            <div className="placeResultsHeader">
+              <span>{searchStatus === "searching" ? "Searching Google Places" : "Google hospital locations"}</span>
+              <strong>
+                {searchStatus === "searching"
+                  ? "..."
+                  : placeResults.length
+                    ? `${placeResults.length} found`
+                    : "No results"}
+              </strong>
+            </div>
+            {searchError && <p>{searchError}</p>}
+            {placeResults.slice(0, 4).map((place) => (
+              <button key={place.id} type="button" onClick={() => focusPlace(place)}>
+                <Hospital size={15} />
+                <span>{place.name}</span>
+              </button>
+            ))}
+          </div>
+        )}
       </>
     );
   }
@@ -1431,6 +1697,15 @@ function GoogleMapShell({ facilities: visibleFacilities, selectedFacility, onSel
   return (
     <div className="fallbackMap" aria-label="Map preview">
       <div className="mapKeyHint">Add VITE_GOOGLE_MAPS_API_KEY to use Google Maps</div>
+      {searchQuery && (
+        <div className="placeResultsTray fallbackTray">
+          <div className="placeResultsHeader">
+            <span>Map search queued</span>
+            <strong>Needs key</strong>
+          </div>
+          <p>Google Places results will appear here after the Maps key is available.</p>
+        </div>
+      )}
       <div className="arterial roadA" />
       <div className="arterial roadB" />
       <div className="arterial roadC" />
@@ -2167,7 +2442,11 @@ function runButtonAction(event, action) {
 }
 
 function loadGoogleMaps(apiKey) {
-  if (window.google?.maps?.Map && window.google?.maps?.marker?.AdvancedMarkerElement) {
+  if (
+    window.google?.maps?.Map &&
+    window.google?.maps?.marker?.AdvancedMarkerElement &&
+    window.google?.maps?.places?.Place
+  ) {
     return Promise.resolve();
   }
   if (window.__referralGoogleMapsPromise) {
@@ -2182,7 +2461,7 @@ function loadGoogleMaps(apiKey) {
       resolve();
     };
     const script = document.createElement("script");
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&v=weekly&loading=async&libraries=marker&callback=__initReferralGoogleMaps`;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&v=weekly&loading=async&libraries=marker,places&callback=__initReferralGoogleMaps`;
     script.async = true;
     script.defer = true;
     script.dataset.googleMaps = "true";
@@ -2202,15 +2481,69 @@ function makeGoogleMarkerContent(tier, selected) {
   return marker;
 }
 
+function makePlaceMarkerContent() {
+  const marker = document.createElement("div");
+  marker.className = "googlePlacePin";
+  marker.innerHTML = `<span></span>`;
+  return marker;
+}
+
 function renderMapInfo(facility) {
   const tierLabel = tierMeta[facility.tier].label;
   return `
     <div class="gmInfo">
-      <strong>${facility.name}</strong>
-      <span>${facility.city}, ${facility.state} · ${facility.distanceKm} km</span>
-      <em>${tierLabel} evidence</em>
+      <strong>${escapeHtml(facility.name)}</strong>
+      <span>${escapeHtml(facility.city)}, ${escapeHtml(facility.state)} · ${escapeHtml(facility.distanceKm)} km</span>
+      <em>${escapeHtml(tierLabel)} evidence</em>
     </div>
   `;
+}
+
+function renderPlaceInfo(place) {
+  const rating = place.rating ? ` · ${place.rating} stars` : "";
+  const status = place.businessStatus ? ` · ${formatStatus(place.businessStatus.toLowerCase())}` : "";
+  const mapLink = place.googleMapsURI
+    ? `<a href="${escapeHtml(place.googleMapsURI)}" target="_blank" rel="noreferrer">Open in Google Maps</a>`
+    : "";
+
+  return `
+    <div class="gmInfo gmPlaceInfo">
+      <strong>${escapeHtml(place.name)}</strong>
+      <span>${escapeHtml(place.address || "Address unavailable")}</span>
+      <em>Google Places${escapeHtml(rating)}${escapeHtml(status)}</em>
+      ${mapLink}
+    </div>
+  `;
+}
+
+function getPlaceDisplayName(displayName) {
+  if (!displayName) return "";
+  if (typeof displayName === "string") return displayName;
+  return displayName.text || displayName.name || "";
+}
+
+function getPlaceLocationLiteral(location) {
+  if (!location) return null;
+  if (typeof location.lat === "function" && typeof location.lng === "function") {
+    return { lat: location.lat(), lng: location.lng() };
+  }
+  if (typeof location.lat === "number" && typeof location.lng === "number") {
+    return { lat: location.lat, lng: location.lng };
+  }
+  return null;
+}
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (character) => {
+    const entities = {
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;"
+    };
+    return entities[character];
+  });
 }
 
 export default App;
