@@ -1,4 +1,4 @@
--- Integrator -> workspace.virtue_foundation_enriched.facilities_gold
+-- Integrator -> workspace.virtue_foundation_enriched.gold_facilities
 -- Wide enriched table at the CANONICAL facility grain (9,989 rows = 9,989 distinct facility_sk).
 -- Base = facilities_silver WHERE is_canonical, LEFT JOINed 1:1 on facility_sk to ALL enrichment tables:
 --   beds, availability, contact, freshness, social, capability, geo, quality (the original 8),
@@ -18,7 +18,7 @@
 --     * cf.is_jci_accredited is selected as is_jci_accredited (no alias needed; the cap one is gone).
 --     * pr.doctor_count_text is selected as doctor_count_text (no alias needed; the cap one is gone).
 
-CREATE OR REPLACE TABLE workspace.virtue_foundation_enriched.facilities_gold AS
+CREATE OR REPLACE TABLE workspace.virtue_foundation_enriched.gold_facilities AS
 SELECT
   s.facility_sk, s.unique_id, s.name, s.address_city, s.address_state, s.pincode_clean,
   s.latitude, s.longitude, s.facility_type, s.operator_type,
@@ -145,4 +145,4 @@ LEFT JOIN workspace.virtue_foundation_enriched.facilities_enrich_staff         s
 LEFT JOIN workspace.virtue_foundation_enriched.facilities_enrich_description   de  USING (facility_sk);
 
 -- Validation (expect 9989 / 9989):
--- SELECT COUNT(*), COUNT(DISTINCT facility_sk) FROM workspace.virtue_foundation_enriched.facilities_gold;
+-- SELECT COUNT(*), COUNT(DISTINCT facility_sk) FROM workspace.virtue_foundation_enriched.gold_facilities;

@@ -1,12 +1,12 @@
 -- 16_validate_grain.sql
 -- Executable grain assertions. Run AFTER building the enrichment tables and around
--- materializing facilities_gold. Each assert_true FAILS the run (throws) if an
+-- materializing gold_facilities. Each assert_true FAILS the run (throws) if an
 -- enrichment table is not EXACTLY 1 row per facility_sk -- which would silently
 -- fan out the wide gold table on its LEFT JOINs.
 --
 -- Bridge tables (facilities_specialties / facilities_equipment / facilities_clinical_facts /
 -- facilities_doctors) are INTENTIONALLY many-rows-per-facility, are NOT asserted here,
--- and are NOT joined into facilities_gold.
+-- and are NOT joined into gold_facilities.
 
 SELECT assert_true((SELECT COUNT(*) = COUNT(DISTINCT facility_sk) FROM workspace.virtue_foundation_enriched.facilities_enrich_beds),           'facilities_enrich_beds not 1:1 on facility_sk');
 SELECT assert_true((SELECT COUNT(*) = COUNT(DISTINCT facility_sk) FROM workspace.virtue_foundation_enriched.facilities_enrich_availability),   'facilities_enrich_availability not 1:1 on facility_sk');
@@ -21,4 +21,4 @@ SELECT assert_true((SELECT COUNT(*) = COUNT(DISTINCT facility_sk) FROM workspace
 SELECT assert_true((SELECT COUNT(*) = COUNT(DISTINCT facility_sk) FROM workspace.virtue_foundation_enriched.facilities_enrich_trust),          'facilities_enrich_trust not 1:1 on facility_sk');
 SELECT assert_true((SELECT COUNT(*) = COUNT(DISTINCT facility_sk) FROM workspace.virtue_foundation_enriched.facilities_enrich_staff),          'facilities_enrich_staff not 1:1 on facility_sk');
 SELECT assert_true((SELECT COUNT(*) = COUNT(DISTINCT facility_sk) FROM workspace.virtue_foundation_enriched.facilities_enrich_description),    'facilities_enrich_description not 1:1 on facility_sk');
-SELECT assert_true((SELECT COUNT(*) = COUNT(DISTINCT facility_sk) FROM workspace.virtue_foundation_enriched.facilities_gold),                  'facilities_gold not 1:1 on facility_sk');
+SELECT assert_true((SELECT COUNT(*) = COUNT(DISTINCT facility_sk) FROM workspace.virtue_foundation_enriched.gold_facilities),                  'gold_facilities not 1:1 on facility_sk');

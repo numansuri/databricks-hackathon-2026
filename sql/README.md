@@ -26,10 +26,10 @@ plus three bug fixes and one dedup on `04`/`06`/`08`). All tables verified.
 | 12 | `12_trust.sql` | `facilities_enrich_trust` (digital legitimacy, org/social/source counts, completeness score) | 9,989 |
 | 13 | `13_staff.sql` | `facilities_enrich_staff` (**new**: named-doctor count, 18 specialist-title flags — 17 counted, generic `has_physician` excluded) + bridge `facilities_doctors` (**new**) | enrich 9,989; bridge **13,469** |
 | 14 | `14_description.sql` | `facilities_enrich_description` (**new**: text metrics, ownership sector, founding year, opening-hours, accreditation/24x7 signals) | 9,989 |
-| 09 | `09_facilities_gold.sql` | `facilities_gold` (**rebuilt**) | **9,989** wide (**177 cols**), 1:1 joins |
-| 09b | `09b_gold_comments.sql` | column comments on every `facilities_gold` column | 177 comments |
+| 09 | `09_gold_facilities.sql` | `gold_facilities` (**rebuilt**) | **9,989** wide (**177 cols**), 1:1 joins |
+| 09b | `09b_gold_comments.sql` | column comments on every `gold_facilities` column | 177 comments |
 | 15 | `15_data_dictionary.sql` | `facilities_data_dictionary` (one row per gold column) | **177** |
-| 16 | `16_validate_grain.sql` | `assert_true` 1:1-grain checks for all 13 enrich tables + `facilities_gold` (fails the run on any fan-out) | 14 asserts |
+| 16 | `16_validate_grain.sql` | `assert_true` 1:1-grain checks for all 13 enrich tables + `gold_facilities` (fails the run on any fan-out) | 14 asserts |
 
 00 must run first (foundation). 01–08, 10–14 are independent and can run in any order / in parallel.
 09 runs last (joins all enrich tables 1:1), then 09b stamps comments, then `15_data_dictionary.sql`
@@ -55,7 +55,7 @@ Long tables for fan-out queries (counts/density at value grain, not 1-row-per-fa
 
 ## Documentation table
 `facilities_data_dictionary` — `column_name, ordinal_position, data_type, description` for every
-`facilities_gold` column. Materialized by `15_data_dictionary.sql` from `workspace.information_schema.columns`
+`gold_facilities` column. Materialized by `15_data_dictionary.sql` from `workspace.information_schema.columns`
 after 09b stamps the comments. **177 rows = 177 gold columns; 0 rows have a NULL/empty `description`** (full coverage).
 
 ## Key model facts

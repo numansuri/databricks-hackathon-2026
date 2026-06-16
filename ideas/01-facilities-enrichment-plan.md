@@ -1,7 +1,7 @@
 # Facilities Enrichment Plan v2 — Virtue Foundation (DAIS 2026)
 
 **Date:** 2026-06-15 · **Status:** `built` (deterministic core; LLM/scrape follow-ups pending) · codex-reviewed
-**Build:** all tables live in `workspace.virtue_foundation_enriched`; `facilities_gold` = 9,989 facilities × 177 cols (grew 86 → 147 → 176 → 177; see Coverage audit). See [`../sql/README.md`](../sql/README.md).
+**Build:** all tables live in `workspace.virtue_foundation_enriched`; `gold_facilities` = 9,989 facilities × 177 cols (grew 86 → 147 → 176 → 177; see Coverage audit). See [`../sql/README.md`](../sql/README.md).
 **Source table:** `databricks_virtue_foundation_dataset_dais_2026.virtue_foundation_dataset.facilities`
 **Output location:** `workspace.virtue_foundation_enriched.*` (see note below)
 **Companion:** [`../findings/dataset-deep-dive.md`](../findings/dataset-deep-dive.md)
@@ -10,7 +10,7 @@
 1. **Output schema.** Intent was "same schema as the source," but the source catalog
    `databricks_virtue_foundation_dataset_dais_2026` is a **read-only Delta Sharing catalog** — tables
    cannot be created there. Closest viable home = **`workspace.virtue_foundation_enriched`** (the
-   writable UC catalog), holding `facilities_silver`, `facilities_gold`, `facilities_enrich_*`.
+   writable UC catalog), holding `facilities_silver`, `gold_facilities`, `facilities_enrich_*`.
 2. **Contact backfill (WS-3) stays dead-simple & best-effort.** One lightweight website-only pass; if a value
    can't be extracted *reliably*, we do **not** guess — we leave it NULL and **surface the uncertainty to the
    frontend** via confidence/verification fields. No Facebook scraping, no spike gating, no over-engineering.
@@ -187,7 +187,7 @@ facilities (raw 10,088)
                    │   emergency_readiness_score (WS-2+WS-6)
                    ├─ rolls up frontend confidence: needs_verification (bool) + *_verification_status per domain
                    ├─ degrades missing/failed WS to NULL + *_status (never aborts)
-                   └─► facilities_gold (wide) + data_dictionary
+                   └─► gold_facilities (wide) + data_dictionary
 ```
 **Output schema:** `workspace.virtue_foundation_enriched` (source catalog is read-only Delta Share — see Decisions).
 Tables prefixed `facilities_`. LLM = Databricks `ai_query()` with Claude (in-platform, batchable).
@@ -203,7 +203,7 @@ Independent-after-WS-0 workstreams fan out; cross-WS fields are Integrator-owned
 - **WS-0 Silver+Key+Dedup Builder** (first; blocks all).
 - **Parallel fan-out** (read silver, write own 1-row-per-key table): A1 Beds · A2 Availability · A4 Freshness ·
   A5 Social · A6 Capability · A7 Geo/Density · A8 Quality. *(A3 Contact = separate gated track.)*
-- **Integrator** — 1:1 joins → `facilities_gold`, derives cross-WS fields, validation suite, data dictionary, WS-9 score.
+- **Integrator** — 1:1 joins → `gold_facilities`, derives cross-WS fields, validation suite, data dictionary, WS-9 score.
 - **Codex** — reviewed this plan (done); will review the Integrator + WS-3 spike before they ship.
 
 **Runtime:** default **deterministic notebook sequence** (cheap, auditable). Promote to a Databricks Workflow only
@@ -255,7 +255,7 @@ The deterministic core was **rebuilt and expanded** after the original fan-out b
   `operating_theatre_count` / `doctor_count_text`, and `specialties_list`/`equipment_list` passthroughs.
 - `facilities_silver` (WS-0) **expanded** with array/social/affiliation/source-url passthroughs feeding the above.
 
-**New gold columns:** `facilities_gold` grew to **147 columns** (was 86). Additions span the new clinical
+**New gold columns:** `gold_facilities` grew to **147 columns** (was 86). Additions span the new clinical
 flags, `specialties_list`/`equipment_list`, mined counts, the profile block (age/doctor/staffing/description/
 address), the clinical-facts roll-up, and the full trust block. Cross-workstream derived fields
 (`emergency_readiness_score`/`_tier`, `needs_outreach`, `is_digitally_active`, `needs_verification`) are retained.
@@ -308,7 +308,7 @@ A second pass added two more enrichment tables, one more bridge, four correctnes
    `has_telemedicine`, `has_ambulance`) plus two mined counts that **exactly duplicated**
    `facilities_enrich_clinical_facts`, restoring a single source of truth for free-text clinical signals.
 
-**Final gold column count:** `facilities_gold` is now **177 columns** (147 → 176 → 177; +29 from the staff and
+**Final gold column count:** `gold_facilities` is now **177 columns** (147 → 176 → 177; +29 from the staff and
 description blocks, then a Codex-review fix pass that dropped `desc_bed_count` and added the governed
 `ownership_sector_final` (+`_source`)). The data dictionary was re-materialized
 (`15_data_dictionary.sql`): **177 dictionary rows = 177 gold columns, 0 NULL/empty descriptions**.
