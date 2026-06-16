@@ -1,321 +1,206 @@
 # Shiftlink
 
-Frontend prototype for the Databricks Apps and Agents Hackathon for Good (DAIS 2026).
+**Place specialist volunteers where India's health need is highest.**
 
-Shiftlink is a role-based hospital exchange for referral and volunteering workflows. Doctors search facilities, inspect evidence, shortlist options, and send scheduling requests. Hospitals get a separate exchange view where they can approve or deny requests sent to their facility, and they can also request doctors directly from the local user table.
+Shiftlink helps a single actor — a doctor — decide *where* to volunteer their
+specialty, *who* to contact, and *how* to fit the visits into one week. It ranks
+Indian districts by **unmet need** for the doctor's specialty (from NFHS-driven
+gold health data), names real candidate **host clinics** in the top districts,
+drafts a warm **outreach message** to a clinic, and — once a clinic replies with
+proposed times — builds the doctor's **visit week deterministically**, with an
+honest per-clinic Constraint Ledger of what fit, what didn't, and why. Nothing is
+auto-sent or auto-confirmed; every number that isn't ground truth is labeled an
+assumption. It is doctor-only (no hospital/marketplace persona).
 
-## Current Status
+---
 
-This repository currently contains a working React/Vite frontend prototype.
+## The demo arc — four tabs are the four features
 
-Implemented:
+The whole app keys off one spine. No free text flows downstream:
 
-- Doctor practice context field directly in doctor sign-up, with a fallback onboarding screen when a doctor account has no saved profile.
-- Local sign-up and login flow for doctor and hospital accounts.
-- Local browser-backed user database in `localStorage`.
-- Hospital sign-up fields for hospital name, street address, phone number, and optional Facebook page.
-- Text entry for specialties, experience, preferred regions, and volunteering interests.
-- Browser audio capture with `MediaRecorder`.
-- Speech-to-text handoff to `POST /api/transcribe` when a backend exists.
-- Demo transcript fallback when `/api/transcribe` is not available.
-- Local doctor profile persistence in `localStorage`.
-- Doctor app shell with Search, Schedule, and Shortlist tabs.
-- Chat-style left panel with context-update guidance.
-- Google Maps JavaScript API integration when `VITE_GOOGLE_MAPS_API_KEY` is set.
-- Google Maps fallback map when no API key is configured.
-- Pseudo facility markers using Google Maps Advanced Markers.
-- Facility cards, evidence drawer, contact links, trust tiers, shortlist actions, and schedule builder.
-- Hospital exchange view for facility-specific scheduling request review.
-- Hospital approve and deny actions for pending doctor-to-hospital requests.
-- Hospital-to-doctor requests from the local doctor account list.
-- Doctor accept and decline actions for hospital-originated requests.
-- Automatic schedule insertion when a doctor accepts a hospital request.
-- Local scheduling request persistence in `localStorage`.
-- Shiftlink light and dark theme toggle persisted in `localStorage`.
-- Databricks Apps bundle configuration in `databricks.yml`.
-- Production build with Vite.
+```
+specialty_canonical  →  facility_id  →  requestId
+   (onboard→recommend)  (recommend→outreach) (outreach→schedule)
+```
 
-Not implemented yet:
+1. **Onboard** — Sign in as a doctor, pick **1 of 110 canonical specialties** from
+   a controlled picker. The chosen `specialty_canonical` is the join key for
+   everything after.
+2. **Recommend** — The districts with the highest unmet need for that specialty,
+   already impact-ranked (0–100), with a severity badge (critical/high/moderate/low),
+   the driving needs, and real candidate host clinics. Honest states are first-class:
+   - `no_gap_signal` for the **93** specialties with no measured need signal (an
+     empty browse fallback, never a fabricated ranking).
+   - "best-available" copy for `pulmonology` / `neonatology` (demand-bearing but no
+     critical/high districts).
+   - **greenfield** when no credible host clinic survives the filter — never an
+     invented clinic.
+   - thin-specialty caveat for the 4 sparse specialties.
+   An "Add my state" chip narrows the national list client-side (no re-rank).
+3. **Outreach** — Pick a host clinic, draft a warm, channel-aware message. Drafting
+   is the one live LLM use (`databricks-llama-4-maverick` via the Express server).
+   The server picks the channel deterministically (email → phone → WhatsApp →
+   website → Facebook) and tailors to the clinic's `specialtiesList`. If the LLM is
+   unreachable, a local template draft renders instead — the UI never breaks.
+   Approving simulates the clinic replying with proposed times.
+4. **Schedule** — Add a fixed commitment, set preferences (mornings, max/day,
+   home-by), hit **Build my week**. `buildSchedule()` is fully deterministic: it
+   only schedules over slots the clinic actually offered, uses coarse haversine
+   travel bands (30/60/120/240 min — no live routing), and emits a **Constraint
+   Ledger** explaining each visit and each clinic that needs renegotiated times.
+   Confirmation goes through one writer (`confirmProposals`), keyed by `requestId`.
 
-- FastAPI backend.
-- Live Databricks SQL queries from the frontend.
-- Persistent backend tables for users, doctor profiles, shortlists, schedules, or two-way scheduling decisions.
-- Real OpenAI Whisper transcription endpoint.
-- LLM-powered query parsing, evidence scoring, or email generation.
-- Production authentication, authorization, password hashing, or session management.
-- Patient records or PHI handling.
+### Demo tips
 
-## Demo Data
+For some specialties the highest-impact district is **greenfield** (no host clinic
+in the data), so the app honestly shows a "no credible host yet" state there. For a
+smooth live demo, pick a specialty whose **top** district has host clinics. Verified
+good combos: `endocrinology_diabetes` → Theni, Tamil Nadu (rank 1, impact 100, 2
+hosts); `preventive_medicine` → Deoghar, Jharkhand (rank 2, 3 hosts);
+`adolescent_medicine` → Paschim Medinipur, West Bengal (rank 1, 3 hosts);
+`medical_oncology` / `gynecologic_oncology` → Adilabad, Telangana (rank 1). Note:
+"Pediatrics" is the densest signal but its top districts (Araria, Kanpur Dehat) are
+greenfield — its first clickable host is around rank 5 (Budaun, UP).
 
-The frontend currently uses hardcoded pseudo facility data in `src/App.jsx`.
+---
 
-The pseudo data is intentionally shaped like the planned Databricks data path:
+## Architecture
 
-- facility name, type, city, state, distance, latitude, longitude
-- trust tier: `strong`, `partial`, or `weak`
-- evidence snippets from fields such as capability, procedure, equipment, specialties, and description
-- weak-evidence flags
-- phone and email contact fields
+```
+┌───────────────────────────────────────────────────────────────┐
+│  React 19 + Vite SPA            src/App.jsx (single file)       │
+│  · onboarding picker            src/specialties.js (110 + alias)│
+│  · thin reader, ZERO ranking    src/recommendation.js           │
+│  · deterministic scheduler      src/scheduler.js                │
+│         │ reads at runtime              │ POST /api/outreach     │
+│         ▼                               ▼                        │
+│  public/gold/*.json (bundled)    Node Express  server.js         │
+│  (pre-ranked slices)             + server/outreach.js (LLM)      │
+└───────────────────────────────────────────────────────────────┘
+            ▲ generated offline                  │ in-network call
+            │ recommend.py --emit-slice          ▼
+   ┌─────────────────────────┐        Databricks FM serving endpoint
+   │ recommender/recommend.py│        databricks-llama-4-maverick
+   │ (pure-stdlib, the one   │
+   │  ranking brain)         │  reads  Databricks gold tables in
+   └─────────────────────────┘ ─────  workspace.virtue_foundation_enriched
+```
 
-The map currently plots three pseudo facilities around Ahmedabad.
+- **React 19 + Vite SPA** — `src/App.jsx` is the whole UI. It does **zero ranking**;
+  it filters the pre-ranked bundled slices and renders.
+- **One Node Express server** — `server.js` + `server/outreach.js`. The only live AI
+  route is `POST /api/outreach`; `GET /api/health` reports LLM/build status. The
+  same process serves the built SPA in production. No FastAPI, no second runtime.
+- **Deterministic Python recommender** — `recommender/recommend.py` is pure stdlib.
+  It is the single source of district rankings and emits the bundled JSON the app
+  reads. The app never ranks.
+- **Databricks** — gold tables live in `workspace.virtue_foundation_enriched`; the
+  `databricks-llama-4-maverick` serving endpoint backs outreach drafting.
 
-## Planned Data Sources
+---
 
-The product design targets the Virtue Foundation dataset in Databricks Unity Catalog:
+## Data — bundled, pre-ranked JSON slices
 
-- `databricks_virtue_foundation_dataset_dais_2026.virtue_foundation_dataset.facilities`
-- `databricks_virtue_foundation_dataset_dais_2026.virtue_foundation_dataset.india_post_pincode_directory`
-- `databricks_virtue_foundation_dataset_dais_2026.virtue_foundation_dataset.nfhs_5_district_health_indicators`
+The app ships pre-computed JSON in `public/gold/`, generated **offline** by
+`recommend.py --emit-slice` from the live gold layer and committed. At runtime the
+app reads these files directly — **no live Databricks SQL** in the demo path.
 
-The current frontend does not query these tables directly.
+| File | What it is |
+|---|---|
+| `demand_supply_slice.json` | The ranking. `meta` (110 total / 17 demand-bearing / 4 thin / 93 no-signal / top-20 per specialty), `demandBearing` (top-20 impact-ranked districts per demand specialty), and `noSignal` (the 93 names). |
+| `facilities_slice.json` | ~357 canonical facility objects for the bundled districts — `id` (= `gold_facilities.unique_id`), name/type/city/state, lat/lng, contacts (email/phone/website/facebook), `specialtiesList`, ownership, complexity, district keys. The app enriches a recommended clinic by `facility_id`. |
+| `facilities_seed.json` | A 20-row first-page subset of the slice, imported synchronously so the `facilities` state array is never empty at init. |
+| `specialty_aliases.json` | Shared alias → canonical map so the picker typeahead and the recommender resolve specialties identically. |
+| `district_cards.json` | Per-district context (persona label, top need categories, top priority specialties) for the Recommend tab's context block. |
 
-Useful repo context:
+`recommend.py` is the **single ranking brain**: the picker *lists* all 110
+specialties (every one is a valid join key), but only the **17** demand-bearing
+ones produce a ranking. The other **93** return `no_gap_signal`. The emit step
+asserts these counts (vocabulary-drift guard) and verifies every named candidate
+clinic's `facility_id` resolves in the slice.
 
-- `findings/dataset-deep-dive.md` summarizes the source tables and data quality traps.
-- `docs/superpowers/specs/2026-06-15-referral-copilot-design.md` contains the broader design spec.
-- `docs/visual-directions/referral-copilot-mockups.html` contains the visual direction board used before selecting the Hospital Exchange design direction.
-- `explore.py` is a local Databricks exploration script. It is not part of the React app runtime.
+---
 
-## App Flows
+## Run locally
 
-### Account Access
-
-The first screen is a role-based sign-up/login view.
-
-Supported local account types:
-
-- `doctor`
-- `hospital`
-
-Doctor accounts provide practice context during sign-up, then enter the referral workspace. Hospital accounts enter their hospital name, street address, phone number, and optional Facebook page, then enter that hospital's exchange view.
-
-Current local storage keys:
-
-- `referralCopilotUsers` stores prototype user accounts.
-- `referralCopilotSessionUserId` stores the active local session.
-- `referralCopilotScheduleRequests` stores two-way scheduling requests.
-
-Passwords and hospital profile fields are stored in localStorage for prototype purposes only. This is not production authentication.
-
-### Doctor Context
-
-During doctor sign-up, the doctor fills in a profile textarea with specialties, experience, languages, preferred regions, and volunteering interests. The setup copy tells the doctor that this context can be updated, added to, or removed later through the chatbot.
-
-If an older local doctor account has no saved profile, the app shows the same context editor as a fallback onboarding screen before the doctor enters the main workspace.
-
-The `Speak` control:
-
-1. Requests microphone access in the browser.
-2. Records audio with `MediaRecorder`.
-3. Sends an audio blob to `POST /api/transcribe`.
-4. Adds the returned transcript to the textarea.
-
-If the endpoint is unavailable, the prototype inserts a demo transcript so the UI can still be tested without a backend.
-
-The saved doctor profile is stored per user in `localStorage` under `referralCopilotDoctorProfile:{userId}`.
-
-### Search
-
-The Search tab has:
-
-- a chat-style interaction area
-- quick prompt buttons
-- a search input
-- ranked pseudo facility cards
-- a Google map or fallback map
-- an evidence drawer for the selected facility
-
-The chatbot currently has static behavior. It does not call an LLM yet.
-
-### Shortlist
-
-The Shortlist tab shows facilities saved during the current browser session. Shortlist state is React state only; it is not persisted to a backend.
-
-### Schedule
-
-The Schedule tab lets the doctor add planned visits to facilities. Adding a visit also creates a pending doctor-to-hospital scheduling request in `referralCopilotScheduleRequests`. The doctor's in-memory schedule list and weekly ribbon update immediately.
-
-The same tab shows hospital-to-doctor requests. The doctor can accept or decline those requests. Accepting a hospital request changes that request to `approved` and inserts the visit into the doctor's in-memory schedule.
-
-### Hospital Exchange
-
-Hospital users see a facility-specific exchange queue. Requests are filtered by the hospital profile created during sign-up.
-
-The exchange view shows:
-
-- pending, approved, and denied counts
-- a request form populated from local doctor accounts
-- hospital-entered name, address, phone, email, and optional Facebook page
-- doctor name and email
-- requested date and time
-- request purpose
-- approve and deny buttons for pending doctor-originated requests
-- an outgoing queue for requests sent to doctors
-- facility contact and evidence context
-
-Hospital decisions and doctor decisions are stored in `referralCopilotScheduleRequests` in the browser.
-
-## Tech Stack
-
-- React 19
-- Vite 8
-- lucide-react icons
-- Google Maps JavaScript API
-- Browser `MediaRecorder` API
-- Local browser storage for users, sessions, profiles, and requests in the current prototype
-
-The project was tested locally with Node `v25.3.0` and npm `11.7.0`.
-
-## Local Setup
-
-Install dependencies:
+Requires Node (for the app/server) and Python 3 (only if you regenerate slices).
 
 ```bash
 npm install
 ```
 
-Create a local environment file:
+**Dev (two processes, hot reload):**
 
 ```bash
-cp .env.example .env
+node server.js          # API on :4173
+npm run dev             # Vite SPA on :5173 (proxies /api → :4173)
 ```
 
-Add a Google Maps API key:
+`vite.config.js` proxies `/api/*` to `http://localhost:4173`, so outreach works
+end-to-end in dev. Open http://localhost:5173.
+
+**One-process (build then serve, like production):**
 
 ```bash
-VITE_GOOGLE_MAPS_API_KEY=your_google_maps_javascript_api_key
+npm run start           # = vite build && node server.js  → serves SPA + /api on :4173
 ```
 
-Optional for production-style Maps configuration:
+`server.js` returns a 503 "Frontend not built yet" only if `dist/` is missing —
+the `vite build &&` prefix prevents that. `dist/` is **not** committed.
+
+> **`/api/outreach` without Databricks creds:** with no LLM provider configured the
+> endpoint returns a deterministic **template draft** (`source: "template"`), so the
+> UI is fully usable offline. With creds it calls the FM endpoint and returns
+> `source: "ai"`. Set them via `.env` (see `.env.example`) — `OPENAI_API_KEY` for
+> direct OpenAI, or `DATABRICKS_HOST` + `DATABRICKS_TOKEN` (PAT) for local Databricks.
+> These are **server-side only** — never prefix with `VITE_`.
+
+**Regenerate the bundled slices (optional, needs a fresh gold export):**
 
 ```bash
-VITE_GOOGLE_MAP_ID=your_google_maps_map_id
+python recommender/recommend.py --emit-slice --out public/gold
 ```
 
-Run the dev server:
+---
 
-```bash
-npm run dev -- --port 5173
+## Deploy (Databricks Apps)
+
+`databricks.yml` declares the app and its serving-endpoint resource:
+
+- `outreach_model` → `databricks-llama-4-maverick` (`CAN_QUERY`), injected as
+  `OUTREACH_MODEL`; `LLM_PROVIDER=databricks`.
+- `config.command` is `["npm", "run", "start"]` — `vite build && node server.js`
+  builds `dist/` then serves the SPA **and** `/api/*` from one process.
+
+In a deployed Free Edition app, external egress is blocked, so outreach calls the
+**in-network** Databricks FM endpoint via the OpenAI SDK (base URL pointed at
+`/serving-endpoints`), using OAuth credentials auto-injected by the platform. There
+is a per-process LLM-call cap (`OUTREACH_MAX_CALLS`, default 500) since the app has
+no per-user auth. Prewarm the app once before a demo so the build+boot is done.
+
+---
+
+## Repo layout
+
+```
+src/
+  App.jsx              single-file React app (onboard / recommend / outreach / schedule)
+  specialties.js       110 canonical specialties + resolveSpecialty (asserts 110 at load)
+  recommendation.js    thin reader/filter over the bundled slices — NO ranking
+  scheduler.js         buildSchedule() + travel bands + Constraint Ledger (deterministic)
+  scheduler.test.mjs   scheduler unit tests
+  styles.css
+server.js              the only server: serves dist/ + POST /api/outreach, GET /api/health
+server/outreach.js     channel selection + LLM drafting (Databricks/OpenAI) + template fallback
+recommender/
+  recommend.py         the single ranking brain; --emit-slice writes public/gold/*.json
+  EVAL.md, README.md   scoring rationale + eval notes
+public/gold/*.json     bundled, pre-ranked data the app reads at runtime
+docs/superpowers/specs/ design specs (the integration spec is the source of truth)
+databricks.yml         Databricks App + outreach_model serving-endpoint resource
+vite.config.js         dev /api proxy → :4173
+package.json           dev / build / start scripts
 ```
 
-Open:
-
-```text
-http://localhost:5173/
-```
-
-Build for production:
-
-```bash
-npm run build
-```
-
-Preview a production build:
-
-```bash
-npm run preview
-```
-
-Run the production start command used by Databricks Apps:
-
-```bash
-npm run start
-```
-
-## Databricks Apps Configuration
-
-`databricks.yml` defines a Databricks Apps bundle for the existing app resource:
-
-- App resource name: `referral_copilot`
-- Databricks app name: `referral-copilot`
-- Workspace host: `https://dbc-87f85fc5-dc00.cloud.databricks.com`
-- Start command: `npm run start`
-- Google Maps secret reference: scope `referral-copilot`, key `google-maps-api-key`
-
-The Databricks app resource name and URL still use the earlier `referral-copilot` deployment name, while the product UI shown to users is Shiftlink.
-
-## Google Maps Configuration
-
-The live map branch is enabled when `VITE_GOOGLE_MAPS_API_KEY` is present.
-
-The app loads:
-
-- Maps JavaScript API
-- `marker` library
-- Advanced Markers
-
-The code uses `VITE_GOOGLE_MAP_ID` when provided. If no map ID is provided, the app falls back to `DEMO_MAP_ID`, which is suitable for local prototype rendering but should be replaced for production.
-
-The `.env` file is ignored by git. Do not commit real API keys.
-
-## Repository Layout
-
-```text
-.
-|-- README.md
-|-- databricks.yml
-|-- docs/
-|   |-- visual-directions/
-|   |   `-- referral-copilot-mockups.html
-|   `-- superpowers/specs/2026-06-15-referral-copilot-design.md
-|-- findings/dataset-deep-dive.md
-|-- ideas/README.md
-|-- explore.py
-|-- index.html
-|-- package.json
-|-- package-lock.json
-|-- src/
-|   |-- App.jsx
-|   |-- main.jsx
-|   `-- styles.css
-`-- .env.example
-```
-
-Generated or local-only paths:
-
-- `node_modules/`
-- `dist/`
-- `.env`
-
-These are ignored by `.gitignore`.
-
-## Verification
-
-The current frontend has been verified with:
-
-```bash
-npm run build
-npm audit --json
-```
-
-At the time this README was written:
-
-- `npm run build` completed successfully.
-- `npm audit --json` reported zero vulnerabilities.
-- A standalone Playwright smoke test confirmed doctor sign-up shows the context textarea and `Speak` control, blocks account creation until context exists, and saves the profile under the new doctor account.
-- A standalone Playwright smoke test confirmed hospital sign-up captures hospital name, street address, phone number, and optional Facebook page, removes the pseudo facility selector, and renders the saved hospital profile in the exchange view.
-- A standalone Playwright smoke test completed doctor signup, hospital signup, hospital-to-doctor request creation, doctor acceptance, and approved schedule insertion.
-- The local browser rendered the live Google Maps branch with three pseudo facility markers when a Maps API key was present.
-- The browser console had no warnings or errors after switching to async Maps loading and Advanced Markers.
-
-## Security and Privacy Notes
-
-- `.env` is ignored by git.
-- The Google Maps API key should be restricted in Google Cloud before any public deployment.
-- The prototype does not collect patient information.
-- The prototype does not send email.
-- The prototype does not persist users, doctor context, shortlists, schedules, or hospital decisions outside the browser.
-- Prototype passwords are stored in localStorage and must be replaced with real authentication before deployment.
-- The speech recording flow only sends audio to `/api/transcribe`; that endpoint is not implemented in this repo yet.
-
-## Next Engineering Steps
-
-1. Add a FastAPI backend.
-2. Implement `/api/transcribe`.
-3. Add backend user accounts, password hashing, session management, and role authorization.
-4. Add Databricks SQL access for facility search.
-5. Implement backend profile, shortlist, schedule, and hospital decision persistence.
-6. Replace pseudo facility data with scored Databricks results.
-7. Add LLM-backed query parsing and evidence scoring.
-8. Add email draft generation.
-9. Add the backend service to the Databricks Apps bundle.
+The authoritative design doc is
+`docs/superpowers/specs/2026-06-16-shiftlink-integration-spec.md`.
