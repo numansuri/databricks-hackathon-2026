@@ -1,10 +1,10 @@
 bundle:
-  name: referral_copilot
+  name: shiftlink
 
 resources:
   apps:
-    referral_copilot:
-      name: referral-copilot
+    shiftlink:
+      name: shiftlink
       source_code_path: .
       description: Shiftlink — place specialist volunteers where the need is highest.
       resources:
