@@ -384,7 +384,14 @@ def recommend(profile: Profile, gap=None, facilities=None, supply=None):
     # pop_weighted_demand DESC (population-reach tie-break), then unmet_demand
     # DESC, then district name for full determinism. priority_tier is a displayed
     # badge, never a sort key (an earlier tier tilt inverted impact -- EVAL #9).
-    scored.sort(key=lambda t: (-t[0],                                    # impact_index DESC
+    #
+    # Primary key is the ROUNDED impact, matching the value the slice DISPLAYS
+    # (impact_index is emitted as round(ii); see below). Sorting on the hidden
+    # float made two districts that show the same impact (e.g. both "88") fall to
+    # the float order instead of pop_weighted_demand -- a visible tie-break
+    # inversion against the spec (Codex). Rounding the sort key folds those true
+    # display-ties into the pop_weighted_demand break.
+    scored.sort(key=lambda t: (-round(t[0]),                             # displayed impact_index DESC
                                -(t[2].get("pop_weighted_demand") or 0),  # pop-weighted demand DESC (tie-break)
                                -t[2]["unmet_demand"],                     # unmet_demand DESC
                                t[2]["district"]))                        # deterministic final key
@@ -1034,6 +1041,55 @@ def _selftest():
     clinics = [c for r in res["recommendations"] for c in r["candidate_clinics"]]
     check("candidate_clinics carry a facility_id join key",
           len(clinics) > 0 and all(c.get("facility_id") for c in clinics))
+
+    # 13. DISPLAY tie-break (Codex): the sort key is now round(impact), matching the
+    #     value the slice DISPLAYS. So two districts with the SAME displayed impact
+    #     but different hidden floats must break by pop_weighted_demand, not by the
+    #     float. Synthetic: with global_max=100, unmet==impact, so 87.6 and 88.4 both
+    #     ROUND to 88 yet differ as floats. Give the LOWER float (87.6) the HIGHER
+    #     reach -> the old float sort put 88.4 first (inversion); the new rounded sort
+    #     must put the higher-reach 87.6 first.
+    def _grow2(district, unmet, pwd):
+        return {"district": district, "state": "Testland", "specialty": "cardiology",
+                "unmet_demand": unmet, "pop_weighted_demand": pwd, "n_facilities": 0,
+                "n_public": 0, "specialty_absent": True, "is_thin_specialty": False,
+                "score_basis": "demand vs supply", "priority_tier": "critical",
+                "driving_needs": []}
+    synth2 = [_grow2("LowReach", 88.4, 10.0),    # higher float, lower reach
+              _grow2("HighReach", 87.6, 99.0),   # lower float, higher reach -> wins
+              _grow2("Anchor", 100.0, 1.0)]      # fixes global_max=100 so unmet==impact
+    res = recommend(Profile(specialty="cardiology", location_mode="open", top_k=5),
+                    synth2, [], set())
+    same_impact = [r for r in res["recommendations"] if r["impact_index"] == 88]
+    check("same-displayed-impact rows break by pop_weighted_demand (HighReach>LowReach)",
+          [r["district"] for r in same_impact] == ["HighReach", "LowReach"])
+
+    # 13b. The emitted/ranked rows are non-increasing by (round(impact_index),
+    #     pop_weighted_demand) for EVERY demand-bearing specialty -- the exact
+    #     monotonicity Codex found violated in the committed slice.
+    inversions = []
+    for sc in _all_canonical_specialties():
+        r = recommend(Profile(specialty=sc, location_mode="open", top_k=200),
+                      gap, facilities, supply)
+        if r["status"] != "ok":
+            continue
+        # pop_weighted_demand is added at slice-enrich time; re-derive it here from
+        # the gap rows so the assertion covers the value the slice actually sorts on.
+        canonical = resolve_specialty(sc)
+        pwd = {(g["district"], g["state"]): (g.get("pop_weighted_demand") or 0.0)
+               for g in gap if g["specialty"] == canonical}
+        keys = [(rec["impact_index"], pwd.get((rec["district"], rec["state"]), 0.0))
+                for rec in r["recommendations"]]
+        for i in range(len(keys) - 1):
+            (i0, p0), (i1, p1) = keys[i], keys[i + 1]
+            if i0 < i1 or (i0 == i1 and p0 < p1 - 1e-9):
+                inversions.append((sc, keys[i], keys[i + 1]))
+                break
+    check("emitted ranking non-increasing by (round impact_index, pop_weighted_demand) -- zero inversions",
+          not inversions)
+    if inversions:
+        for inv in inversions[:5]:
+            print("    INVERSION", inv)
 
     print(f"\n{'ALL GREEN' if not fails else str(len(fails)) + ' FAILED'}: selftest")
     return len(fails)

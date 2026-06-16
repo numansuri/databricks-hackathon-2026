@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
-    "start": "vite build && node server.js"
+    "start": "vite build && node server.js",
+    "refresh:data": "python3 scripts/refresh_data.py"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^5.0.0",
