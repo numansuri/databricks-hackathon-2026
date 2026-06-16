@@ -132,7 +132,7 @@ The Search tab has:
 - Google Places search results shown as a separate live-results layer when the Maps key supports Places
 - an evidence drawer for the selected facility
 
-The chatbot calls the local server at `POST /api/chat`. The server uses `OPENAI_API_KEY`, `OPENAI_MODEL` (default `gpt-5.5`), and `OPENAI_REASONING_EFFORT` (default `medium`). If the OpenAI key is missing or the request fails, the endpoint returns a local fallback response so the UI remains usable.
+The chatbot calls the local server at `POST /api/chat`. The server uses `OPENAI_API_KEY`, `OPENAI_MODEL` (default `gpt-5.5`), and `OPENAI_REASONING_EFFORT` (default `medium`). Server-side guardrails keep the assistant focused on hospital search, doctor context, outreach, map logistics, and two-way scheduling. If the OpenAI key is missing or the request fails, the endpoint returns a local fallback response so the UI remains usable.
 
 ### Shortlist
 
@@ -190,9 +190,10 @@ Create a local environment file:
 cp .env.example .env
 ```
 
-Add a Google Maps API key:
+Add a Google Maps API key. `GOOGLE_MAPS_API_KEY` is read by the Node server at runtime, while `VITE_GOOGLE_MAPS_API_KEY` keeps local Vite builds compatible:
 
 ```bash
+GOOGLE_MAPS_API_KEY=your_google_maps_javascript_api_key
 VITE_GOOGLE_MAPS_API_KEY=your_google_maps_javascript_api_key
 ```
 
@@ -208,6 +209,7 @@ OPENAI_TRANSCRIBE_MODEL=gpt-4o-transcribe
 Optional for production-style Maps configuration:
 
 ```bash
+GOOGLE_MAPS_MAP_ID=your_google_maps_map_id
 VITE_GOOGLE_MAP_ID=your_google_maps_map_id
 ```
 
@@ -241,7 +243,7 @@ Run the production start command used by Databricks Apps:
 npm run start
 ```
 
-`npm run start` builds the Vite app and starts the Node server that serves `dist/` plus `/api/chat`, `/api/transcribe`, and `/api/health`.
+`npm run start` builds the Vite app and starts the Node server that serves `dist/` plus `/api/chat`, `/api/transcribe`, `/api/config`, and `/api/health`.
 
 ## Databricks Apps Configuration
 
@@ -253,12 +255,14 @@ npm run start
 - Start command: `npm run start`
 - Google Maps secret reference: scope `referral-copilot`, key `google-maps-api-key`
 - OpenAI secret reference: scope `referral-copilot`, key `openai-api-key`
+- Runtime env aliases: `GOOGLE_MAPS_API_KEY`, `VITE_GOOGLE_MAPS_API_KEY`, and `OPENAI_API_KEY`
+- OpenAI defaults in the app config: `OPENAI_MODEL=gpt-5.5`, `OPENAI_REASONING_EFFORT=medium`
 
 The Databricks app resource name and URL still use the earlier `referral-copilot` deployment name, while the product UI shown to users is Shiftlink.
 
 ## Google Maps Configuration
 
-The live map branch is enabled when `VITE_GOOGLE_MAPS_API_KEY` is present.
+The live map branch is enabled when `GET /api/config` returns a Google Maps key. The server reads `GOOGLE_MAPS_API_KEY` first and falls back to `VITE_GOOGLE_MAPS_API_KEY`.
 
 The app loads:
 
@@ -269,9 +273,9 @@ The app loads:
 
 The map toolbar uses Google Places to search hospital locations near the doctor's query. The curated pseudo facility markers remain visible as the dataset layer, while Google Places search results render as a separate live-results layer.
 
-The code uses `VITE_GOOGLE_MAP_ID` when provided. If no map ID is provided, the app falls back to `DEMO_MAP_ID`, which is suitable for local prototype rendering but should be replaced for production.
+The code uses `GOOGLE_MAPS_MAP_ID` or `VITE_GOOGLE_MAP_ID` when provided. If no map ID is provided, the app falls back to `DEMO_MAP_ID`, which is suitable for local prototype rendering but should be replaced for production.
 
-The `.env` file is ignored by git. Do not commit real API keys. `VITE_GOOGLE_MAPS_API_KEY` is intentionally available to browser JavaScript because Google Maps JS keys are client-side keys. `OPENAI_API_KEY` must stay server-side and must not be prefixed with `VITE_`.
+The `.env` file is ignored by git. Do not commit real API keys. The Google Maps JavaScript key is returned to browser JavaScript by `/api/config` because Maps JS keys are client-side keys. `OPENAI_API_KEY` must stay server-side and must not be prefixed with `VITE_`.
 
 ## Repository Layout
 
@@ -320,6 +324,7 @@ At the time this README was written:
 - `npm audit --json` reported zero vulnerabilities.
 - `GET /api/health` confirmed the local server sees the OpenAI configuration.
 - `POST /api/chat` returned an OpenAI `gpt-5.5` structured response with a `mapQuery`.
+- `POST /api/chat` redirects out-of-scope, secret/prompt, and patient-specific clinical advice requests before sending eligible messages to OpenAI.
 - The in-app browser verified a map toolbar search for `hospitals near Jaipur` returned 12 Google Places hospital markers.
 - The in-app browser verified a chatbot request for `hospitals near Udaipur` produced an assistant reply, updated the map query, and rendered 12 Google Places hospital markers.
 - A standalone Playwright smoke test confirmed doctor sign-up shows the context textarea and `Speak` control, blocks account creation until context exists, and saves the profile under the new doctor account.
@@ -335,7 +340,7 @@ At the time this README was written:
 - The prototype does not send email.
 - The prototype does not persist users, doctor context, shortlists, schedules, or hospital decisions outside the browser.
 - Prototype passwords are stored in localStorage and must be replaced with real authentication before deployment.
-- The speech recording flow only sends audio to `/api/transcribe`; that endpoint is not implemented in this repo yet.
+- The speech recording flow sends audio to `/api/transcribe`; audio is processed server-side with the configured OpenAI transcription model.
 
 ## Next Engineering Steps
 

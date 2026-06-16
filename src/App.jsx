@@ -1458,65 +1458,105 @@ function GoogleMapShell({ facilities: visibleFacilities, selectedFacility, onSel
   const markerRef = useRef([]);
   const placeMarkerRef = useRef([]);
   const infoWindowRef = useRef(null);
+  const [runtimeConfig, setRuntimeConfig] = useState(() => ({
+    googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "",
+    googleMapsMapId: import.meta.env.VITE_GOOGLE_MAP_ID || "DEMO_MAP_ID",
+    status: "loading"
+  }));
   const [mapReady, setMapReady] = useState(false);
   const [placeResults, setPlaceResults] = useState([]);
   const [searchStatus, setSearchStatus] = useState("idle");
   const [searchError, setSearchError] = useState("");
-  const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
-  const mapId = import.meta.env.VITE_GOOGLE_MAP_ID || "DEMO_MAP_ID";
+  const apiKey = runtimeConfig.googleMapsApiKey;
+  const mapId = runtimeConfig.googleMapsMapId || "DEMO_MAP_ID";
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadRuntimeConfig() {
+      try {
+        const response = await fetch("/api/config", { cache: "no-store" });
+        if (!response.ok) throw new Error("Config request failed");
+        const data = await response.json();
+        if (cancelled) return;
+        setRuntimeConfig((current) => ({
+          googleMapsApiKey: data.googleMapsApiKey || current.googleMapsApiKey || "",
+          googleMapsMapId: data.googleMapsMapId || current.googleMapsMapId || "DEMO_MAP_ID",
+          status: "ready"
+        }));
+      } catch {
+        if (!cancelled) {
+          setRuntimeConfig((current) => ({ ...current, status: "error" }));
+        }
+      }
+    }
+
+    loadRuntimeConfig();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!apiKey || !mapRef.current) return;
     let cancelled = false;
 
-    loadGoogleMaps(apiKey).then(() => {
-      if (cancelled || !mapRef.current) return;
-      if (!instanceRef.current) {
-        instanceRef.current = new window.google.maps.Map(mapRef.current, {
-          center: { lat: selectedFacility.lat, lng: selectedFacility.lng },
-          zoom: 10,
-          disableDefaultUI: true,
-          zoomControl: true,
-          mapTypeControl: false,
-          fullscreenControl: false,
-          streetViewControl: false,
-          mapId
+    loadGoogleMaps(apiKey)
+      .then(() => {
+        if (cancelled || !mapRef.current) return;
+        if (!instanceRef.current) {
+          instanceRef.current = new window.google.maps.Map(mapRef.current, {
+            center: { lat: selectedFacility.lat, lng: selectedFacility.lng },
+            zoom: 10,
+            disableDefaultUI: true,
+            zoomControl: true,
+            mapTypeControl: false,
+            fullscreenControl: false,
+            streetViewControl: false,
+            mapId
+          });
+        }
+        if (!infoWindowRef.current) {
+          infoWindowRef.current = new window.google.maps.InfoWindow();
+        }
+        const map = instanceRef.current;
+        const bounds = new window.google.maps.LatLngBounds();
+        visibleFacilities.forEach((facility) => bounds.extend({ lat: facility.lat, lng: facility.lng }));
+        if (visibleFacilities.length > 1) {
+          map.fitBounds(bounds, 88);
+        } else {
+          map.setCenter({ lat: selectedFacility.lat, lng: selectedFacility.lng });
+          map.setZoom(11);
+        }
+        markerRef.current.forEach((marker) => {
+          marker.map = null;
         });
-      }
-      if (!infoWindowRef.current) {
-        infoWindowRef.current = new window.google.maps.InfoWindow();
-      }
-      const map = instanceRef.current;
-      const bounds = new window.google.maps.LatLngBounds();
-      visibleFacilities.forEach((facility) => bounds.extend({ lat: facility.lat, lng: facility.lng }));
-      if (visibleFacilities.length > 1) {
-        map.fitBounds(bounds, 88);
-      } else {
-        map.setCenter({ lat: selectedFacility.lat, lng: selectedFacility.lng });
-        map.setZoom(11);
-      }
-      markerRef.current.forEach((marker) => {
-        marker.map = null;
+        markerRef.current = visibleFacilities.map((facility) => {
+          const isSelected = facility.id === selectedFacility.id;
+          const marker = new window.google.maps.marker.AdvancedMarkerElement({
+            position: { lat: facility.lat, lng: facility.lng },
+            map,
+            title: facility.name,
+            content: makeGoogleMarkerContent(facility.tier, isSelected),
+            zIndex: isSelected ? 20 : 10
+          });
+          marker.addEventListener("gmp-click", () => {
+            onSelect(facility.id);
+            infoWindowRef.current.setContent(renderMapInfo(facility));
+            infoWindowRef.current.open({ anchor: marker, map });
+          });
+          return marker;
+        });
+        map.panTo({ lat: selectedFacility.lat, lng: selectedFacility.lng });
+        setMapReady(true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setMapReady(false);
+        setRuntimeConfig((current) => ({ ...current, googleMapsApiKey: "", status: "error" }));
+        setSearchError("Google Maps is unavailable. Check the app key and API restrictions.");
       });
-      markerRef.current = visibleFacilities.map((facility) => {
-        const isSelected = facility.id === selectedFacility.id;
-        const marker = new window.google.maps.marker.AdvancedMarkerElement({
-          position: { lat: facility.lat, lng: facility.lng },
-          map,
-          title: facility.name,
-          content: makeGoogleMarkerContent(facility.tier, isSelected),
-          zIndex: isSelected ? 20 : 10
-        });
-        marker.addEventListener("gmp-click", () => {
-          onSelect(facility.id);
-          infoWindowRef.current.setContent(renderMapInfo(facility));
-          infoWindowRef.current.open({ anchor: marker, map });
-        });
-        return marker;
-      });
-      map.panTo({ lat: selectedFacility.lat, lng: selectedFacility.lng });
-      setMapReady(true);
-    });
 
     return () => {
       cancelled = true;
@@ -1696,7 +1736,11 @@ function GoogleMapShell({ facilities: visibleFacilities, selectedFacility, onSel
 
   return (
     <div className="fallbackMap" aria-label="Map preview">
-      <div className="mapKeyHint">Add VITE_GOOGLE_MAPS_API_KEY to use Google Maps</div>
+      <div className="mapKeyHint">
+        {runtimeConfig.status === "loading"
+          ? "Checking Google Maps configuration"
+          : "Google Maps key is not available in this deployment"}
+      </div>
       {searchQuery && (
         <div className="placeResultsTray fallbackTray">
           <div className="placeResultsHeader">
@@ -2461,7 +2505,7 @@ function loadGoogleMaps(apiKey) {
       resolve();
     };
     const script = document.createElement("script");
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&v=weekly&loading=async&libraries=marker,places&callback=__initReferralGoogleMaps`;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&v=weekly&loading=async&libraries=marker,places&callback=__initReferralGoogleMaps`;
     script.async = true;
     script.defer = true;
     script.dataset.googleMaps = "true";
